@@ -15,31 +15,35 @@ export const HomeView: React.FC<HomeViewProps> = ({ onSelectItem, onViewAll }) =
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
-  useEffect(() => {
-    async function loadData() {
-      setLoading(true);
-      setError(false);
-      try {
-        const [animeRes, movieRes] = await Promise.all([
-          fetchAnimeList(1, 40),
-          fetchMoviesList()
-        ]);
-        if (animeRes.status) {
-          setAnimeList(animeRes.anime);
-        }
-        if (movieRes.status) {
-          setMovieList(movieRes.movies);
-        }
-        if (!animeRes.status && !movieRes.status) {
-          setError(true);
-        }
-      } catch (err) {
-        console.error('Home load error:', err);
-        setError(true);
-      } finally {
-        setLoading(false);
+  const loadData = async () => {
+    setLoading(true);
+    setError(false);
+    try {
+      const [animeRes, movieRes] = await Promise.all([
+        fetchAnimeList(1, 40),
+        fetchMoviesList()
+      ]);
+      const hasAnime = Boolean(animeRes.status && animeRes.anime.length > 0);
+      const hasMovies = Boolean(movieRes.status && movieRes.movies.length > 0);
+
+      if (hasAnime) {
+        setAnimeList(animeRes.anime);
       }
+      if (hasMovies) {
+        setMovieList(movieRes.movies);
+      }
+      if (!hasAnime && !hasMovies) {
+        setError(true);
+      }
+    } catch (err) {
+      console.error('Home load error:', err);
+      setError(true);
+    } finally {
+      setLoading(false);
     }
+  };
+
+  useEffect(() => {
     loadData();
   }, []);
 
@@ -76,7 +80,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onSelectItem, onViewAll }) =
           Unable to fetch data from the live ANIZENX server. Please check your connection and retry.
         </p>
         <button
-          onClick={() => window.location.reload()}
+          onClick={loadData}
           className="bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold px-6 py-2.5 rounded-full shadow-lg shadow-purple-600/30 hover:scale-105 transition-transform"
         >
           Retry Connection

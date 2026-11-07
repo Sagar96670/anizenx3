@@ -103,7 +103,7 @@ export const AnimeListView: React.FC<AnimeListViewProps> = ({
         </div>
       ) : animeList.length === 0 ? (
         <div className="text-center py-20 bg-[#121222] rounded-3xl border border-purple-900/30 space-y-4">
-          <RefreshCw className="w-12 h-12 text-purple-400 mx-auto animate-spin" />
+          <Search className="w-12 h-12 text-purple-400 mx-auto" />
           <h3 className="text-xl font-bold text-white">No Anime Found</h3>
           <p className="text-gray-400 text-sm">Try searching with a different keyword or genre.</p>
           <button

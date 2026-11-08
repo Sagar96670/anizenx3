@@ -2,19 +2,20 @@ import React, { useState, useEffect } from 'react';
 import { Clapperboard, RefreshCw } from 'lucide-react';
 import { MovieItem } from '../types';
 import { AnimeCard } from './AnimeCard';
-import { fetchMoviesList } from '../services/api';
+import { fetchMoviesList, getSynchronousCachedMoviesList } from '../services/api';
 
 interface MovieListViewProps {
   onSelectItem: (id: string, type: 'movie') => void;
 }
 
 export const MovieListView: React.FC<MovieListViewProps> = ({ onSelectItem }) => {
-  const [movies, setMovies] = useState<MovieItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cached = getSynchronousCachedMoviesList();
+  const [movies, setMovies] = useState<MovieItem[]>(cached || []);
+  const [loading, setLoading] = useState(!cached);
 
   useEffect(() => {
     async function loadMovies() {
-      setLoading(true);
+      if (!cached) setLoading(true);
       try {
         const res = await fetchMoviesList();
         if (res.status) {

@@ -24,6 +24,7 @@ import { resolveBlakiteVideo } from '../services/api';
 interface PlayerViewProps {
   animeId: string;
   episodeId: string;
+  mediaType?: 'anime' | 'movie';
   onBack: () => void;
   onNavigateEpisode?: (newEpisodeId: string, newEpisodeNumber: number) => void;
 }
@@ -31,11 +32,14 @@ interface PlayerViewProps {
 export const PlayerView: React.FC<PlayerViewProps> = ({
   animeId,
   episodeId,
+  mediaType = 'anime',
   onBack,
   onNavigateEpisode,
 }) => {
+  const isMovie = mediaType === 'movie';
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const playerContainerRef = useRef<HTMLDivElement | null>(null);
+  const hlsRef = useRef<Hls | null>(null);
 
   const [resolverData, setResolverData] = useState<ResolverResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -51,7 +55,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
-  const [selectedQuality, setSelectedQuality] = useState('720p');
+  const [selectedQuality, setSelectedQuality] = useState('Auto');
   const [availableQualities, setAvailableQualities] = useState<string[]>(['Auto', '240p', '360p', '480p', '720p', '1080p']);
 
   // Menu toggles & auto-hide
@@ -63,15 +67,16 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
   const currentEpNum = episodeId.includes('-') ? parseInt(episodeId.split('-')[1], 10) : 1;
 
   // Fetch initial or quality-switched video stream
+  const targetEpisodeId = isMovie ? (episodeId || '0') : episodeId;
+
   const loadStream = async (qualityToLoad?: string) => {
     setLoading(true);
     setError(false);
     try {
-      const q = qualityToLoad === 'Auto' ? undefined : (qualityToLoad || selectedQuality);
-      const data = await resolveBlakiteVideo(animeId, episodeId, q);
+      const q = qualityToLoad || selectedQuality;
+      const data = await resolveBlakiteVideo(animeId, targetEpisodeId, q === 'Auto' ? undefined : q);
       if (data && data.status && data.video_url) {
         setResolverData(data);
-        if (data.quality) setSelectedQuality(data.quality);
         if (data.available_qualities && data.available_qualities.length > 0) {
           const apiQuals = data.available_qualities;
           setAvailableQualities(apiQuals.includes('Auto') ? apiQuals : ['Auto', ...apiQuals]);
@@ -93,7 +98,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
     loadStream();
   }, [animeId, episodeId]);
 
-  // Handle HLS or standard video source loading
+  // Handle HLS or standard video source loading with mobile streaming optimizations
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !resolverData?.video_url) return;
@@ -101,32 +106,104 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
     const url = resolverData.video_url;
     const savedTime = video.currentTime || 0;
 
+    // Clean up previous Hls instance
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
+
     if (url.includes('.m3u8')) {
       if (Hls.isSupported()) {
-        const hls = new Hls();
+        const hls = new Hls({
+          // Fast mobile startup
+          startFragPrefetch: true,
+          capLevelToPlayerSize: true,
+          // Mobile buffer bounds (buffer ~12s ahead instead of 600s, saves bandwidth & memory)
+          maxBufferLength: 12,
+          maxMaxBufferLength: 20,
+          maxBufferSize: 20 * 1024 * 1024,
+          backBufferLength: 10,
+          lowLatencyMode: true,
+          enableWorker: true,
+          progressive: true,
+          // Robust network recovery for mobile radio latency/reconnects
+          fragLoadingTimeOut: 20000,
+          fragLoadingMaxRetry: 4,
+          fragLoadingRetryDelay: 1000,
+          manifestLoadingTimeOut: 15000,
+          manifestLoadingMaxRetry: 4,
+          levelLoadingTimeOut: 15000,
+          levelLoadingMaxRetry: 4,
+        });
+
+        hlsRef.current = hls;
         hls.loadSource(url);
         hls.attachMedia(video);
+
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          video.currentTime = savedTime;
-          if (isPlaying) video.play().catch(() => {});
+          if (savedTime > 0.5) {
+            try { video.currentTime = savedTime; } catch {}
+          }
+          if (isPlaying) {
+            video.play().catch(() => {});
+          }
         });
+
+        // Auto-recovery from temporary mobile network drops
+        hls.on(Hls.Events.ERROR, (_event, data) => {
+          if (data.fatal) {
+            switch (data.type) {
+              case Hls.ErrorTypes.NETWORK_ERROR:
+                console.warn('HLS network glitch, recovering stream...', data);
+                hls.startLoad();
+                break;
+              case Hls.ErrorTypes.MEDIA_ERROR:
+                console.warn('HLS media decode error, recovering...', data);
+                hls.recoverMediaError();
+                break;
+              default:
+                console.error('Fatal unrecoverable HLS error:', data);
+                hls.destroy();
+                break;
+            }
+          }
+        });
+
         return () => {
-          hls.destroy();
+          if (hlsRef.current) {
+            hlsRef.current.destroy();
+            hlsRef.current = null;
+          }
         };
       } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = url;
-        video.currentTime = savedTime;
+        if (savedTime > 0.5) {
+          const onMetadata = () => {
+            try { video.currentTime = savedTime; } catch {}
+            video.removeEventListener('loadedmetadata', onMetadata);
+          };
+          video.addEventListener('loadedmetadata', onMetadata);
+        }
+        if (isPlaying) video.play().catch(() => {});
       }
     } else {
+      // Standard progressive MP4 stream (Rumble / CDN)
       video.src = url;
-      video.currentTime = savedTime;
+      // Critical mobile fix: DO NOT seek to 0s, which triggers an unnecessary Range abort & re-request!
+      if (savedTime > 0.5) {
+        const onMetadata = () => {
+          try { video.currentTime = savedTime; } catch {}
+          video.removeEventListener('loadedmetadata', onMetadata);
+        };
+        video.addEventListener('loadedmetadata', onMetadata);
+      }
       if (isPlaying) {
         video.play().catch(() => {});
       }
     }
   }, [resolverData?.video_url]);
 
-  // Video event listeners
+  // Video event listeners with fast buffer recovery
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -134,6 +211,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
     const handleTimeUpdate = () => setCurrentTime(video.currentTime);
     const handleDurationChange = () => setDuration(video.duration || 0);
     const handleWaiting = () => setIsBuffering(true);
+    const handleCanPlay = () => setIsBuffering(false);
     const handlePlaying = () => {
       setIsBuffering(false);
       setIsPlaying(true);
@@ -144,6 +222,9 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
     video.addEventListener('timeupdate', handleTimeUpdate);
     video.addEventListener('durationchange', handleDurationChange);
     video.addEventListener('waiting', handleWaiting);
+    video.addEventListener('canplay', handleCanPlay);
+    video.addEventListener('canplaythrough', handleCanPlay);
+    video.addEventListener('loadeddata', handleCanPlay);
     video.addEventListener('playing', handlePlaying);
     video.addEventListener('pause', handlePause);
     video.addEventListener('ended', handleEnded);
@@ -152,6 +233,9 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
       video.removeEventListener('timeupdate', handleTimeUpdate);
       video.removeEventListener('durationchange', handleDurationChange);
       video.removeEventListener('waiting', handleWaiting);
+      video.removeEventListener('canplay', handleCanPlay);
+      video.removeEventListener('canplaythrough', handleCanPlay);
+      video.removeEventListener('loadeddata', handleCanPlay);
       video.removeEventListener('playing', handlePlaying);
       video.removeEventListener('pause', handlePause);
       video.removeEventListener('ended', handleEnded);
@@ -325,16 +409,21 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
 
     setLoading(true);
     try {
-      const data = await resolveBlakiteVideo(animeId, episodeId, q === 'Auto' ? undefined : q);
+      const data = await resolveBlakiteVideo(animeId, targetEpisodeId, q === 'Auto' ? undefined : q);
       if (data && data.status && data.video_url) {
         setResolverData(data);
-        if (data.quality) setSelectedQuality(data.quality);
+        if (data.available_qualities && data.available_qualities.length > 0) {
+          const apiQuals = data.available_qualities;
+          setAvailableQualities(apiQuals.includes('Auto') ? apiQuals : ['Auto', ...apiQuals]);
+        }
         setTimeout(() => {
-          if (videoRef.current) {
-            videoRef.current.currentTime = currentVideoTime;
+          if (videoRef.current && currentVideoTime > 0.5) {
+            try {
+              videoRef.current.currentTime = currentVideoTime;
+            } catch {}
             videoRef.current.play().catch(() => {});
           }
-        }, 300);
+        }, 150);
       }
     } catch (err) {
       console.error('Quality change error:', err);
@@ -380,17 +469,25 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
             <ArrowLeft className="w-3.5 h-3.5" />
           </button>
           <div className="truncate">
-            <span className="font-bold text-white">{resolverData?.animeTitle || 'Anime Series'}</span>
+            <span className="font-bold text-white">{resolverData?.animeTitle || (isMovie ? 'Anime Movie' : 'Anime Series')}</span>
             <span className="mx-2 text-purple-400">•</span>
-            <span className="text-gray-300">Season {resolverData?.season || 1}</span>
-            <span className="mx-2 text-purple-400">•</span>
-            <span className="text-purple-300 font-semibold">Ep {resolverData?.episode || currentEpNum}</span>
+            {isMovie ? (
+              <span className="text-pink-300 font-semibold">Movie (Hindi Dubbed)</span>
+            ) : (
+              <>
+                <span className="text-gray-300">Season {resolverData?.season || 1}</span>
+                <span className="mx-2 text-purple-400">•</span>
+                <span className="text-purple-300 font-semibold">Ep {resolverData?.episode || currentEpNum}</span>
+              </>
+            )}
           </div>
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className="bg-purple-950 text-purple-300 border border-purple-500/40 px-2.5 py-0.5 rounded-lg text-xs font-bold">
-            {selectedQuality}
+            {selectedQuality === 'Auto' && resolverData?.quality
+              ? `Auto (${resolverData.quality})`
+              : selectedQuality}
           </span>
           {resolverData?.format && (
             <span className="bg-pink-950/60 text-pink-300 border border-pink-500/30 px-2 py-0.5 rounded-lg text-[10px] font-semibold hidden sm:inline">
@@ -410,6 +507,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
           ref={videoRef}
           className="w-full h-full object-contain bg-black rounded-2xl pointer-events-none"
           playsInline
+          preload="metadata"
         />
 
         {/* DEDICATED TRANSPARENT INTERACTION OVERLAY (Always active) */}
@@ -576,7 +674,11 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
                   title="Quality Settings"
                 >
                   <Settings className="w-3.5 h-3.5" />
-                  <span>{selectedQuality}</span>
+                  <span>
+                    {selectedQuality === 'Auto' && resolverData?.quality
+                      ? `Auto (${resolverData.quality})`
+                      : selectedQuality}
+                  </span>
                 </button>
 
                 {qualityMenuOpen && (
@@ -625,31 +727,50 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
         </div>
       </div>
 
-      {/* Previous / Next Episode Buttons */}
-      <div className="flex items-center justify-between gap-3 bg-[#121222] px-4 py-2.5 rounded-xl border border-purple-900/40">
-        <button
-          onClick={handlePrevEpisode}
-          disabled={currentEpNum <= 1}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs transition-all cursor-pointer ${
-            currentEpNum <= 1
-              ? 'opacity-40 cursor-not-allowed bg-gray-900 text-gray-600'
-              : 'bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/40'
-          }`}
-        >
-          <SkipBack className="w-3.5 h-3.5" /> Previous
-        </button>
+      {/* Previous / Next Episode Buttons OR Movie Navigation */}
+      {isMovie ? (
+        <div className="flex items-center justify-between gap-3 bg-[#121222] px-4 py-2.5 rounded-xl border border-purple-900/40">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-pink-500 animate-pulse" />
+            <span className="text-xs font-bold text-white">Full Length Feature Film</span>
+            <span className="text-[10px] text-purple-300 font-semibold bg-purple-950/60 px-2 py-0.5 rounded border border-purple-500/30">
+              Hindi Dubbed
+            </span>
+          </div>
 
-        <span className="text-[11px] text-gray-400 font-medium">
-          Episode {currentEpNum}
-        </span>
+          <button
+            onClick={onBack}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/40 transition-all cursor-pointer"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" /> Back to Movie Details
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between gap-3 bg-[#121222] px-4 py-2.5 rounded-xl border border-purple-900/40">
+          <button
+            onClick={handlePrevEpisode}
+            disabled={currentEpNum <= 1}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs transition-all cursor-pointer ${
+              currentEpNum <= 1
+                ? 'opacity-40 cursor-not-allowed bg-gray-900 text-gray-600'
+                : 'bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/40'
+            }`}
+          >
+            <SkipBack className="w-3.5 h-3.5" /> Previous
+          </button>
 
-        <button
-          onClick={handleNextEpisode}
-          className="flex items-center gap-1.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-3 py-1.5 rounded-lg font-semibold text-xs shadow-md shadow-purple-600/30 transition-all cursor-pointer"
-        >
-          Next <SkipForward className="w-3.5 h-3.5" />
-        </button>
-      </div>
+          <span className="text-[11px] text-gray-400 font-medium">
+            Episode {currentEpNum}
+          </span>
+
+          <button
+            onClick={handleNextEpisode}
+            className="flex items-center gap-1.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-3 py-1.5 rounded-lg font-semibold text-xs shadow-md shadow-purple-600/30 transition-all cursor-pointer"
+          >
+            Next <SkipForward className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
     </div>
   );
 };

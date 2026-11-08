@@ -9,6 +9,14 @@
     <meta property="og:description" content="A fully functional anime streaming frontend connected to ANIZENX with a custom premium dark purple neon UI and Google Blogger XML theme generator." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- Performance: Preconnect to critical image CDN and API domains -->
+    <link rel="preconnect" href="https://image.tmdb.org" crossorigin />
+    <link rel="dns-prefetch" href="https://image.tmdb.org" />
+    <link rel="preconnect" href="https://anime-api-new.antideploy.app" crossorigin />
+    <link rel="dns-prefetch" href="https://anime-api-new.antideploy.app" />
+    <link rel="preconnect" href="https://hugh.cdn.rumble.cloud" crossorigin />
+    <link rel="dns-prefetch" href="https://hugh.cdn.rumble.cloud" />
   </head>
   <body>
     <div id="root"></div>

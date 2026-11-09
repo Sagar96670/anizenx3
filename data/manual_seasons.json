@@ -1,0 +1,16 @@
+{
+  "91363_s3": {
+    "animeId": "91363",
+    "season": 3,
+    "episode_count": 0,
+    "title": "Season 3",
+    "status": "Ongoing"
+  },
+  "test-anime-101_s3": {
+    "animeId": "test-anime-101",
+    "season": 3,
+    "episode_count": 0,
+    "title": "Season 3",
+    "status": "Ongoing"
+  }
+}

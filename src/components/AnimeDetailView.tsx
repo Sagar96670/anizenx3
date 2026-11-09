@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Play, Star, Calendar, Tv, ArrowLeft, Layers, Film, ChevronDown } from 'lucide-react';
 import { AnimeItem, SeasonInfo, EpisodeItem } from '../types';
-import { fetchAnimeDetail, fetchAnimeSeasons, fetchAnimeEpisodes, fetchAnimeList } from '../services/api';
+import { fetchAnimeDetail, fetchMergedSeasons, fetchMergedEpisodes, fetchAnimeList } from '../services/api';
 import { AnimeCard } from './AnimeCard';
 import { getOptimizedImageUrl } from '../utils/imageOptimizer';
 
@@ -35,10 +35,10 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
     async function loadData() {
       setLoading(true);
       try {
-        // Parallel fetch for anime detail and seasons info
+        // Parallel fetch for anime detail and merged seasons (API + Manual)
         const [detail, seasonsData] = await Promise.all([
           fetchAnimeDetail(animeId),
-          fetchAnimeSeasons(animeId),
+          fetchMergedSeasons(animeId),
         ]);
 
         if (!isCurrent) return;
@@ -79,7 +79,7 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
     };
   }, [animeId]);
 
-  // Load episodes when animeId or selectedSeason changes
+  // Load merged episodes (API + Manual, deduplicated with manual priority)
   useEffect(() => {
     let isCurrent = true;
     setVisibleCount(INITIAL_EPISODES_DISPLAY);
@@ -87,9 +87,15 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
     async function loadEpisodes() {
       setEpisodesLoading(true);
       try {
-        const eps = await fetchAnimeEpisodes(animeId, selectedSeason, 1, 100);
+        const { episodes: eps } = await fetchMergedEpisodes(animeId, selectedSeason);
         if (isCurrent) {
           setEpisodes(eps);
+          // Immediately synchronize active season badge count with actual merged episodes
+          setSeasons((prevSeasons) =>
+            prevSeasons.map((s) =>
+              s.season === selectedSeason ? { ...s, episode_count: eps.length } : s
+            )
+          );
         }
       } catch (e) {
         console.error('Error loading episodes:', e);
@@ -200,22 +206,28 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
           </div>
 
           <div className="flex flex-wrap gap-2 sm:gap-3">
-            {seasons.map((season) => (
-              <button
-                key={season.season}
-                onClick={() => setSelectedSeason(season.season)}
-                className={`px-4 sm:px-6 py-2.5 sm:py-3 rounded-2xl font-bold text-xs sm:text-sm transition-all flex items-center gap-2 border cursor-pointer ${
-                  selectedSeason === season.season
-                    ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white border-purple-400 shadow-xl shadow-purple-600/40 scale-105'
-                    : 'bg-[#121222] text-gray-300 border-purple-900/30 hover:border-purple-500/40 hover:text-white'
-                }`}
-              >
-                <span>Season {season.season}</span>
-                <span className="text-[10px] sm:text-xs bg-black/40 px-2 py-0.5 rounded-full text-purple-200">
-                  {season.episode_count || 25} Eps
-                </span>
-              </button>
-            ))}
+            {seasons.map((season) => {
+              const count =
+                season.season === selectedSeason && !episodesLoading
+                  ? episodes.length
+                  : (season.episode_count ?? 0);
+              return (
+                <button
+                  key={season.season}
+                  onClick={() => setSelectedSeason(season.season)}
+                  className={`px-4 sm:px-6 py-2.5 sm:py-3 rounded-2xl font-bold text-xs sm:text-sm transition-all flex items-center gap-2 border cursor-pointer ${
+                    selectedSeason === season.season
+                      ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white border-purple-400 shadow-xl shadow-purple-600/40 scale-105'
+                      : 'bg-[#121222] text-gray-300 border-purple-900/30 hover:border-purple-500/40 hover:text-white'
+                  }`}
+                >
+                  <span>Season {season.season}</span>
+                  <span className="text-[10px] sm:text-xs bg-black/40 px-2 py-0.5 rounded-full text-purple-200">
+                    {count} Eps
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -261,14 +273,27 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
                     }
                     className="group bg-[#121222] hover:bg-[#1a1a2e] border border-purple-900/30 hover:border-purple-500/60 p-3.5 sm:p-4 rounded-2xl transition-all duration-200 cursor-pointer flex items-center justify-between shadow-lg hover:shadow-xl hover:shadow-purple-600/20"
                   >
-                    <div className="space-y-0.5">
-                      <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest">
-                        Episode {ep.episode_number}
-                      </span>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest">
+                          Episode {ep.episode_number}
+                        </span>
+                        {ep.isManual ? (
+                          <span className="bg-gradient-to-r from-pink-600 to-purple-600 text-white text-[8px] font-black px-1.5 py-0.2 rounded-full uppercase tracking-wider shadow-sm">
+                            MANUAL
+                          </span>
+                        ) : (
+                          <span className="bg-purple-950 text-purple-300 border border-purple-800/40 text-[8px] font-semibold px-1.5 py-0.2 rounded-full uppercase tracking-wider">
+                            API
+                          </span>
+                        )}
+                      </div>
                       <h3 className="font-bold text-white text-xs sm:text-sm line-clamp-1 group-hover:text-purple-300">
                         {ep.title || `Episode ${ep.episode_number}`}
                       </h3>
-                      <span className="text-[10px] text-gray-400">Hindi Dub / Sub</span>
+                      <span className="text-[10px] text-gray-400">
+                        {ep.isManual ? 'Custom Stream' : 'Hindi Dub / Sub'}
+                      </span>
                     </div>
 
                     <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-purple-600/20 group-hover:bg-gradient-to-tr group-hover:from-purple-600 group-hover:to-pink-600 flex items-center justify-center text-purple-300 group-hover:text-white transition-all shadow-md flex-shrink-0">

@@ -20,6 +20,7 @@ import {
 import Hls from 'hls.js';
 import { ResolverResponse } from '../types';
 import { resolveBlakiteVideo } from '../services/api';
+import { getPlayableStreamUrl } from '../utils/videoProxy';
 
 interface PlayerViewProps {
   animeId: string;
@@ -103,7 +104,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
     const video = videoRef.current;
     if (!video || !resolverData?.video_url) return;
 
-    const url = resolverData.video_url;
+    const url = getPlayableStreamUrl(resolverData.video_url);
     const savedTime = video.currentTime || 0;
 
     // Clean up previous Hls instance
@@ -412,6 +413,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
       const data = await resolveBlakiteVideo(animeId, targetEpisodeId, q === 'Auto' ? undefined : q);
       if (data && data.status && data.video_url) {
         setResolverData(data);
+        setError(false);
         if (data.available_qualities && data.available_qualities.length > 0) {
           const apiQuals = data.available_qualities;
           setAvailableQualities(apiQuals.includes('Auto') ? apiQuals : ['Auto', ...apiQuals]);
@@ -424,9 +426,14 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
             videoRef.current.play().catch(() => {});
           }
         }, 150);
+      } else {
+        setError(true);
+        setErrorMessage(data?.error || `Quality ${q} is unavailable for this video.`);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Quality change error:', err);
+      setError(true);
+      setErrorMessage(err?.message || `Failed to switch to quality ${q}.`);
     } finally {
       setLoading(false);
       resetControlsTimer();
@@ -443,7 +450,8 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
   const handlePrevEpisode = () => {
     if (currentEpNum > 1 && onNavigateEpisode) {
       const prevNum = currentEpNum - 1;
-      const seasonNum = episodeId.split('-')[0] || '1';
+      const cleanEp = episodeId.replace(/^manual_/, '');
+      const seasonNum = cleanEp.split('-')[0] || '1';
       onNavigateEpisode(`${seasonNum}-${prevNum}`, prevNum);
     }
   };
@@ -451,7 +459,8 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
   const handleNextEpisode = () => {
     if (onNavigateEpisode) {
       const nextNum = currentEpNum + 1;
-      const seasonNum = episodeId.split('-')[0] || '1';
+      const cleanEp = episodeId.replace(/^manual_/, '');
+      const seasonNum = cleanEp.split('-')[0] || '1';
       onNavigateEpisode(`${seasonNum}-${nextNum}`, nextNum);
     }
   };

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Film, Search, Menu, X, Sparkles, Download, Home, Tv, Clapperboard } from 'lucide-react';
+import { Film, Search, Menu, X, Sparkles, Download, Home, Tv, Clapperboard, Shield } from 'lucide-react';
 
 interface NavbarProps {
   currentTab: string;
@@ -54,10 +54,10 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Desktop Nav Links */}
-        <nav className="hidden md:flex items-center gap-8">
+        <nav className="hidden md:flex items-center gap-7">
           <button
             onClick={() => setCurrentTab('home')}
-            className={`flex items-center gap-2 text-sm font-medium transition-colors ${
+            className={`flex items-center gap-2 text-sm font-medium transition-colors cursor-pointer ${
               currentTab === 'home' ? 'text-purple-400 font-semibold' : 'text-gray-300 hover:text-white'
             }`}
           >
@@ -68,7 +68,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               setSelectedGenre('');
               setCurrentTab('anime-list');
             }}
-            className={`flex items-center gap-2 text-sm font-medium transition-colors ${
+            className={`flex items-center gap-2 text-sm font-medium transition-colors cursor-pointer ${
               currentTab === 'anime-list' ? 'text-purple-400 font-semibold' : 'text-gray-300 hover:text-white'
             }`}
           >
@@ -76,11 +76,21 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
           <button
             onClick={() => setCurrentTab('movie-list')}
-            className={`flex items-center gap-2 text-sm font-medium transition-colors ${
+            className={`flex items-center gap-2 text-sm font-medium transition-colors cursor-pointer ${
               currentTab === 'movie-list' ? 'text-purple-400 font-semibold' : 'text-gray-300 hover:text-white'
             }`}
           >
             <Clapperboard className="w-4 h-4" /> Movies
+          </button>
+          <button
+            onClick={() => setCurrentTab('admin')}
+            className={`flex items-center gap-1.5 text-sm font-medium transition-colors cursor-pointer px-2.5 py-1 rounded-lg border ${
+              currentTab === 'admin'
+                ? 'bg-purple-600/30 text-pink-300 border-pink-500/50 font-semibold shadow-md shadow-purple-900/40'
+                : 'text-gray-300 border-purple-900/30 hover:border-purple-500/40 hover:text-pink-300 hover:bg-purple-950/40'
+            }`}
+          >
+            <Shield className="w-3.5 h-3.5 text-pink-400" /> Admin
           </button>
 
           {/* Genres Dropdown */}
@@ -203,6 +213,16 @@ export const Navbar: React.FC<NavbarProps> = ({
             className="block w-full text-left px-3 py-2 rounded-lg text-base font-medium text-gray-200 hover:bg-purple-600/20"
           >
             Movies
+          </button>
+          <button
+            onClick={() => {
+              setCurrentTab('admin');
+              setMobileMenuOpen(false);
+            }}
+            className="flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg text-base font-medium text-pink-300 hover:bg-purple-600/20 bg-purple-950/40 border border-purple-500/30"
+          >
+            <Shield className="w-4 h-4 text-pink-400" />
+            <span>Episode Admin</span>
           </button>
           <div className="pt-2 border-t border-purple-900/30">
             <p className="text-xs font-semibold text-purple-400 px-3 mb-2 uppercase tracking-wider">Genres</p>

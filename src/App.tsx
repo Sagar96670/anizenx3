@@ -8,6 +8,7 @@ import { AnimeDetailView } from './components/AnimeDetailView';
 import { MovieDetailView } from './components/MovieDetailView';
 import { PlayerView } from './components/PlayerView';
 import { BloggerThemeModal } from './components/BloggerThemeModal';
+import { AdminPanel } from './components/AdminPanel';
 
 const GENRES = [
   'Animation',
@@ -265,6 +266,27 @@ export default function App() {
                 'watch-anime': selectedAnimeId,
                 ep: newEpId,
               });
+            }}
+          />
+        )}
+
+        {currentTab === 'admin' && (
+          <AdminPanel
+            onBack={() => {
+              setCurrentTab('home');
+              updateUrl({ tab: 'home' });
+            }}
+            onOpenPlayer={(animeId, episodeId) => {
+              setSelectedAnimeId(animeId);
+              setSelectedEpisodeId(episodeId);
+              setMediaType('anime');
+              setCurrentTab('player');
+              updateUrl({
+                'watch-anime': animeId,
+                ep: episodeId,
+                tab: 'player',
+              });
+              window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
           />
         )}

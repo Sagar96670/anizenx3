@@ -1,0 +1,15 @@
+{
+  "episodes": {},
+  "seasons": {
+    "test-anime-delete-101_s2": {
+      "id": "test-anime-delete-101_s2",
+      "type": "season",
+      "animeId": "test-anime-delete-101",
+      "animeTitle": "Test Deletion Anime",
+      "season": 2,
+      "reason": "Testing permanent season deletion",
+      "deletedAt": "2026-11-09T16:45:04.484Z"
+    }
+  },
+  "anime": {}
+}

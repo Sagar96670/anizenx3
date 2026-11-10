@@ -13,17 +13,18 @@ export function getPlayableStreamUrl(rawUrl?: string): string {
     }
 
     const isHttpsPage = typeof window !== 'undefined' && window.location.protocol === 'https:';
-    // Mixed content (HTTP video on HTTPS page) must be proxied through backend
+    
+    // Mixed content (HTTP video on HTTPS page) must be proxied through backend to prevent browser security block
     if (isHttpsPage && trimmed.startsWith('http://')) {
       return `/api/proxy/stream?url=${encodeURIComponent(trimmed)}`;
     }
 
-    // For external direct video URLs (like ddns.net or custom servers), 
-    // proxying through /api/proxy/stream prevents CORS preflight or header blocking.
-    if (trimmed.includes(':8080') || trimmed.includes(':8000') || trimmed.includes('ddns.net') || trimmed.includes('ngrok') || trimmed.includes('file') || !trimmed.endsWith('.m3u8')) {
+    // Direct HTTP or custom DDNS/ngrok servers on ports 8080/8000 that block CORS
+    if (trimmed.includes(':8080') || trimmed.includes(':8000') || trimmed.includes('ddns.net') || trimmed.includes('ngrok')) {
       return `/api/proxy/stream?url=${encodeURIComponent(trimmed)}`;
     }
   }
 
   return trimmed;
 }
+

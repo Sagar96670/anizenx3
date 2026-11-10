@@ -104,7 +104,8 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
     const video = videoRef.current;
     if (!video || !resolverData?.video_url) return;
 
-    const url = getPlayableStreamUrl(resolverData.video_url);
+    const rawUrl = resolverData.video_url;
+    const url = getPlayableStreamUrl(rawUrl);
     const savedTime = video.currentTime || 0;
 
     // Clean up previous Hls instance
@@ -113,28 +114,29 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
       hlsRef.current = null;
     }
 
-    if (url.includes('.m3u8')) {
+    const isHls = url.includes('.m3u8') || url.toLowerCase().includes('m3u8') || resolverData.format === 'HLS';
+
+    if (isHls) {
       if (Hls.isSupported()) {
         const hls = new Hls({
-          // Fast mobile startup
           startFragPrefetch: true,
           capLevelToPlayerSize: true,
-          // Mobile buffer bounds (buffer ~12s ahead instead of 600s, saves bandwidth & memory)
-          maxBufferLength: 12,
-          maxMaxBufferLength: 20,
-          maxBufferSize: 20 * 1024 * 1024,
-          backBufferLength: 10,
-          lowLatencyMode: true,
+          // Robust buffer bounds for smooth VOD anime streaming (30s buffer ahead)
+          maxBufferLength: 30,
+          maxMaxBufferLength: 60,
+          maxBufferSize: 60 * 1024 * 1024,
+          backBufferLength: 30,
+          lowLatencyMode: false, // Disabled for VOD anime episodes to avoid stall glitches
           enableWorker: true,
           progressive: true,
           // Robust network recovery for mobile radio latency/reconnects
-          fragLoadingTimeOut: 20000,
-          fragLoadingMaxRetry: 4,
+          fragLoadingTimeOut: 25000,
+          fragLoadingMaxRetry: 6,
           fragLoadingRetryDelay: 1000,
-          manifestLoadingTimeOut: 15000,
-          manifestLoadingMaxRetry: 4,
-          levelLoadingTimeOut: 15000,
-          levelLoadingMaxRetry: 4,
+          manifestLoadingTimeOut: 20000,
+          manifestLoadingMaxRetry: 5,
+          levelLoadingTimeOut: 20000,
+          levelLoadingMaxRetry: 5,
         });
 
         hlsRef.current = hls;
@@ -142,12 +144,19 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
         hls.attachMedia(video);
 
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          setIsBuffering(false);
+          setLoading(false);
           if (savedTime > 0.5) {
             try { video.currentTime = savedTime; } catch {}
           }
-          if (isPlaying) {
-            video.play().catch(() => {});
-          }
+          video.play().then(() => {
+            setIsPlaying(true);
+            setIsBuffering(false);
+          }).catch(() => {
+            // Autoplay restricted by mobile browser policy - ready to play on user tap
+            setIsPlaying(false);
+            setIsBuffering(false);
+          });
         });
 
         // Auto-recovery from temporary mobile network drops
@@ -164,6 +173,9 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
                 break;
               default:
                 console.error('Fatal unrecoverable HLS error:', data);
+                setIsBuffering(false);
+                setError(true);
+                setErrorMessage('Stream playback error. Tap retry to reload.');
                 hls.destroy();
                 break;
             }
@@ -178,47 +190,78 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
         };
       } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = url;
-        if (savedTime > 0.5) {
-          const onMetadata = () => {
+        const onMetadata = () => {
+          setIsBuffering(false);
+          setLoading(false);
+          if (savedTime > 0.5) {
             try { video.currentTime = savedTime; } catch {}
-            video.removeEventListener('loadedmetadata', onMetadata);
-          };
-          video.addEventListener('loadedmetadata', onMetadata);
-        }
-        if (isPlaying) video.play().catch(() => {});
+          }
+          video.removeEventListener('loadedmetadata', onMetadata);
+        };
+        video.addEventListener('loadedmetadata', onMetadata);
+        video.play().then(() => {
+          setIsPlaying(true);
+          setIsBuffering(false);
+        }).catch(() => {
+          setIsPlaying(false);
+          setIsBuffering(false);
+        });
       }
     } else {
       // Standard progressive MP4 stream (Rumble / CDN)
       video.src = url;
-      // Critical mobile fix: DO NOT seek to 0s, which triggers an unnecessary Range abort & re-request!
-      if (savedTime > 0.5) {
-        const onMetadata = () => {
+      const onMetadata = () => {
+        setIsBuffering(false);
+        setLoading(false);
+        if (savedTime > 0.5) {
           try { video.currentTime = savedTime; } catch {}
-          video.removeEventListener('loadedmetadata', onMetadata);
-        };
-        video.addEventListener('loadedmetadata', onMetadata);
-      }
-      if (isPlaying) {
-        video.play().catch(() => {});
-      }
+        }
+        video.removeEventListener('loadedmetadata', onMetadata);
+      };
+      video.addEventListener('loadedmetadata', onMetadata);
+      video.play().then(() => {
+        setIsPlaying(true);
+        setIsBuffering(false);
+      }).catch(() => {
+        setIsPlaying(false);
+        setIsBuffering(false);
+      });
     }
   }, [resolverData?.video_url]);
 
-  // Video event listeners with fast buffer recovery
+  // Video event listeners with fast buffer recovery and Android Chrome fix
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
-    const handleTimeUpdate = () => setCurrentTime(video.currentTime);
+    const handleTimeUpdate = () => {
+      setCurrentTime(video.currentTime);
+      // Android Chrome recovery: if video time is advancing and video is not paused, dismiss buffering overlay
+      if (video.currentTime > 0 && !video.paused) {
+        setIsBuffering(false);
+      }
+    };
     const handleDurationChange = () => setDuration(video.duration || 0);
-    const handleWaiting = () => setIsBuffering(true);
+    const handleWaiting = () => {
+      if (!video.paused && video.readyState < 3) {
+        setIsBuffering(true);
+      }
+    };
     const handleCanPlay = () => setIsBuffering(false);
     const handlePlaying = () => {
       setIsBuffering(false);
       setIsPlaying(true);
     };
+    const handleProgress = () => {
+      if (video.readyState >= 3) {
+        setIsBuffering(false);
+      }
+    };
     const handlePause = () => setIsPlaying(false);
-    const handleEnded = () => setIsPlaying(false);
+    const handleEnded = () => {
+      setIsPlaying(false);
+      setIsBuffering(false);
+    };
 
     video.addEventListener('timeupdate', handleTimeUpdate);
     video.addEventListener('durationchange', handleDurationChange);
@@ -227,6 +270,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
     video.addEventListener('canplaythrough', handleCanPlay);
     video.addEventListener('loadeddata', handleCanPlay);
     video.addEventListener('playing', handlePlaying);
+    video.addEventListener('progress', handleProgress);
     video.addEventListener('pause', handlePause);
     video.addEventListener('ended', handleEnded);
 
@@ -238,6 +282,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
       video.removeEventListener('canplaythrough', handleCanPlay);
       video.removeEventListener('loadeddata', handleCanPlay);
       video.removeEventListener('playing', handlePlaying);
+      video.removeEventListener('progress', handleProgress);
       video.removeEventListener('pause', handlePause);
       video.removeEventListener('ended', handleEnded);
     };
@@ -404,9 +449,25 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
       resetControlsTimer();
       return;
     }
-    const currentVideoTime = videoRef.current?.currentTime || 0;
     setSelectedQuality(q);
     setQualityMenuOpen(false);
+
+    // If Hls.js instance has internal levels in master playlist, switch level instantly without reload
+    if (hlsRef.current && hlsRef.current.levels && hlsRef.current.levels.length > 0) {
+      if (q === 'Auto') {
+        hlsRef.current.currentLevel = -1; // Auto adaptive bitrate
+        resetControlsTimer();
+        return;
+      } else {
+        const targetHeight = parseInt(q.replace('p', ''), 10);
+        const levelIdx = hlsRef.current.levels.findIndex((l) => l.height === targetHeight);
+        if (levelIdx !== -1) {
+          hlsRef.current.currentLevel = levelIdx;
+          resetControlsTimer();
+          return;
+        }
+      }
+    }
 
     setLoading(true);
     try {
@@ -418,14 +479,6 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
           const apiQuals = data.available_qualities;
           setAvailableQualities(apiQuals.includes('Auto') ? apiQuals : ['Auto', ...apiQuals]);
         }
-        setTimeout(() => {
-          if (videoRef.current && currentVideoTime > 0.5) {
-            try {
-              videoRef.current.currentTime = currentVideoTime;
-            } catch {}
-            videoRef.current.play().catch(() => {});
-          }
-        }, 150);
       } else {
         setError(true);
         setErrorMessage(data?.error || `Quality ${q} is unavailable for this video.`);

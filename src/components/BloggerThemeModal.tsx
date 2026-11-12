@@ -45,7 +45,7 @@ export const BloggerThemeModal: React.FC<BloggerThemeModalProps> = ({ isOpen, on
               <h2 className="text-xl font-bold text-white flex items-center gap-2">
                 Google Blogger XML Theme <Sparkles className="w-4 h-4 text-purple-400" />
               </h2>
-              <p className="text-xs text-purple-300">Ready-to-import Blogger XML template for ANIZENX</p>
+              <p className="text-xs text-purple-300">Ready-to-import Blogger XML template for KUROIWA</p>
             </div>
           </div>
           <button

@@ -201,7 +201,7 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
             {/* Synopsis with Expand/Collapse Toggle */}
             <div className="space-y-1">
               <p className={`text-gray-200 text-xs sm:text-sm leading-relaxed drop-shadow ${!isSynopsisExpanded ? 'line-clamp-3' : ''}`}>
-                {anime.synopsis || 'Experience the ultimate anime streaming adventure with high-definition audio options in Hindi Dub and Sub on ANIZENX.'}
+                {anime.synopsis || 'Experience the ultimate anime streaming adventure with high-definition audio options in Hindi Dub and Sub on KUROIWA.'}
               </p>
               {anime.synopsis && anime.synopsis.length > 150 && (
                 <button

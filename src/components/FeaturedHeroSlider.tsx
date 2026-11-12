@@ -119,7 +119,7 @@ export const FeaturedHeroSlider: React.FC<FeaturedHeroSliderProps> = ({ items, o
           key={`synopsis-${currentAnime.id}`}
           className="text-gray-200 text-[11px] sm:text-xs leading-tight line-clamp-1 sm:line-clamp-2 max-w-xl drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)] hidden sm:block font-medium"
         >
-          {currentAnime.synopsis || 'Streaming in full High Definition with multi-audio options on ANIZENX.'}
+          {currentAnime.synopsis || 'Streaming in full High Definition with multi-audio options on KUROIWA.'}
         </p>
 
         {/* Action Buttons: Watch Now & Details - Single Row on Mobile */}

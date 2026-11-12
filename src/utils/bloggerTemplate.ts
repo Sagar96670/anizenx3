@@ -14,8 +14,8 @@ export function generateBloggerXML(): string {
     </style>
     <b:skin><![CDATA[
       /*
-         * Theme Name: ANIZENX - Premium Neon Anime Streaming
-         * Author: ANIZENX Team
+         * Theme Name: KUROIWA - Premium Neon Anime Streaming
+         * Author: KUROIWA Team
          * Description: Professional Dark Purple Neon Anime Streaming Theme for Google Blogger
          * Version: 1.0.0
       */
@@ -148,7 +148,7 @@ export function generateBloggerXML(): string {
 <body>
     <header class='navbar'>
         <div class='logo'>
-            <i class='fa-solid fa-bolt'></i> ANIZENX
+            <i class='fa-solid fa-bolt'></i> KUROIWA
         </div>
         <ul class='nav-links'>
             <li><a expr:href='data:blog.homepageUrl'>Home</a></li>
@@ -161,7 +161,7 @@ export function generateBloggerXML(): string {
     <div class='hero-section'>
         <div class='hero-content'>
             <h1 class='hero-title'>Stream High Quality Anime &amp; Movies</h1>
-            <p style='color: #d1d5db; margin-bottom: 2rem;'>Powered by ANIZENX with Hindi Dub, Sub, and High-Speed Video Streaming.</p>
+            <p style='color: #d1d5db; margin-bottom: 2rem;'>Powered by KUROIWA with Hindi Dub, Sub, and High-Speed Video Streaming.</p>
             <a class='btn-primary' expr:href='data:blog.homepageUrl + "#anime"'>Explore Anime</a>
         </div>
     </div>
@@ -177,7 +177,7 @@ export function generateBloggerXML(): string {
                       <img class='card-img' expr:src='data:post.featuredImage'/>
                     <b:else/>
                       <img class='card-img' src='https://image.tmdb.org/t/p/w500/hqRb1wyIVsaMukZElPBUXoJPqrR.jpg'/>
-                    </b:if>
+                    <b:if>
                     <div class='card-body'>
                       <h3 class='card-title'><a expr:href='data:post.url'><data:post.title/></a></h3>
                       <p style='font-size: 0.85rem; color: #9ca3af;'><data:post.date/></p>
@@ -191,7 +191,7 @@ export function generateBloggerXML(): string {
     </main>
 
     <footer class='footer'>
-        <p>&#169; 2026 ANIZENX. Powered by Google Blogger &amp; ANIZENX.</p>
+        <p>&#169; 2026 KUROIWA. Powered by Google Blogger &amp; KUROIWA.</p>
     </footer>
 </body>
 </html>`;

@@ -76,7 +76,7 @@ export const MovieDetailView: React.FC<MovieDetailViewProps> = ({
         </div>
         <h3 className="text-xl font-bold text-white">Movie Not Found</h3>
         <p className="text-gray-400 text-sm">
-          Unable to load movie details from the ANIZENX server.
+          Unable to load movie details from the KUROIWA server.
         </p>
         <div className="flex items-center justify-center gap-3 pt-2">
           <button
@@ -159,7 +159,7 @@ export const MovieDetailView: React.FC<MovieDetailViewProps> = ({
 
             <div className="space-y-1">
               <p className={`text-gray-200 text-xs sm:text-sm leading-relaxed drop-shadow ${!isSynopsisExpanded ? 'line-clamp-3' : ''}`}>
-                {movie.synopsis || 'Stream this feature anime movie in full High Definition with official Hindi Dub audio on ANIZENX.'}
+                {movie.synopsis || 'Stream this feature anime movie in full High Definition with official Hindi Dub audio on KUROIWA.'}
               </p>
               {movie.synopsis && movie.synopsis.length > 150 && (
                 <button

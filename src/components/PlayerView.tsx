@@ -171,7 +171,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
 
     setDownloadingQuality(q);
 
-    const titleSlug = (resolverData?.animeTitle || 'ANIZENX_Episode')
+    const titleSlug = (resolverData?.animeTitle || 'KUROIWA_Episode')
       .replace(/[^a-zA-Z0-9]/g, '_');
     const fileName = `${titleSlug}_S${resolverData?.season || 1}E${resolverData?.episode || currentEpNum}_${q}.ts`;
 
@@ -498,6 +498,10 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
         hls.loadSource(url);
         hls.attachMedia(video);
 
+        hls.on(Hls.Events.MANIFEST_LOADING, () => {
+          setIsBuffering(true);
+        });
+
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           setIsBuffering(false);
           setLoading(false);
@@ -512,6 +516,14 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
             setIsPlaying(false);
             setIsBuffering(false);
           });
+        });
+
+        hls.on(Hls.Events.FRAG_LOADING, () => {
+          setIsBuffering(true);
+        });
+
+        hls.on(Hls.Events.FRAG_BUFFERED, () => {
+          setIsBuffering(false);
         });
 
         // Auto-recovery from temporary mobile network drops
@@ -529,6 +541,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
               default:
                 console.error('Fatal unrecoverable HLS error:', data);
                 setIsBuffering(false);
+                setLoading(false);
                 setError(true);
                 setErrorMessage('Stream playback error. Tap retry to reload.');
                 hls.destroy();
@@ -589,6 +602,9 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
     const video = videoRef.current;
     if (!video) return;
 
+    const handleLoadStart = () => {
+      setIsBuffering(true);
+    };
     const handleTimeUpdate = () => {
       setCurrentTime(video.currentTime);
       // Android Chrome recovery: if video time is advancing and video is not paused, dismiss buffering overlay
@@ -598,13 +614,25 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
     };
     const handleDurationChange = () => setDuration(video.duration || 0);
     const handleWaiting = () => {
+      setIsBuffering(true);
+    };
+    const handleSeeking = () => {
+      setIsBuffering(true);
+    };
+    const handleSeeked = () => {
+      setIsBuffering(false);
+    };
+    const handleStalled = () => {
       if (!video.paused && video.readyState < 3) {
         setIsBuffering(true);
       }
     };
-    const handleCanPlay = () => setIsBuffering(false);
+    const handleCanPlay = () => {
+      setIsBuffering(false);
+    };
     const handlePlaying = () => {
       setIsBuffering(false);
+      setLoading(false);
       setIsPlaying(true);
     };
     const handleProgress = () => {
@@ -617,10 +645,23 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
       setIsPlaying(false);
       setIsBuffering(false);
     };
+    const handleError = () => {
+      if (video.error) {
+        console.error('HTML5 Video Error:', video.error);
+        setIsBuffering(false);
+        setLoading(false);
+        setError(true);
+        setErrorMessage('Unable to play video stream. Please tap retry.');
+      }
+    };
 
+    video.addEventListener('loadstart', handleLoadStart);
     video.addEventListener('timeupdate', handleTimeUpdate);
     video.addEventListener('durationchange', handleDurationChange);
     video.addEventListener('waiting', handleWaiting);
+    video.addEventListener('seeking', handleSeeking);
+    video.addEventListener('seeked', handleSeeked);
+    video.addEventListener('stalled', handleStalled);
     video.addEventListener('canplay', handleCanPlay);
     video.addEventListener('canplaythrough', handleCanPlay);
     video.addEventListener('loadeddata', handleCanPlay);
@@ -628,11 +669,16 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
     video.addEventListener('progress', handleProgress);
     video.addEventListener('pause', handlePause);
     video.addEventListener('ended', handleEnded);
+    video.addEventListener('error', handleError);
 
     return () => {
+      video.removeEventListener('loadstart', handleLoadStart);
       video.removeEventListener('timeupdate', handleTimeUpdate);
       video.removeEventListener('durationchange', handleDurationChange);
       video.removeEventListener('waiting', handleWaiting);
+      video.removeEventListener('seeking', handleSeeking);
+      video.removeEventListener('seeked', handleSeeked);
+      video.removeEventListener('stalled', handleStalled);
       video.removeEventListener('canplay', handleCanPlay);
       video.removeEventListener('canplaythrough', handleCanPlay);
       video.removeEventListener('loadeddata', handleCanPlay);
@@ -640,6 +686,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
       video.removeEventListener('progress', handleProgress);
       video.removeEventListener('pause', handlePause);
       video.removeEventListener('ended', handleEnded);
+      video.removeEventListener('error', handleError);
     };
   }, []);
 
@@ -936,36 +983,42 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
           title="Toggle Controls"
         />
 
-        {/* Loading / Buffering */}
+        {/* Loading / Buffering Overlay (Highest z-index so it sits above video & controls) */}
         {(loading || isBuffering) && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 backdrop-blur-[2px] z-20 pointer-events-none rounded-2xl">
-            <Loader2 className="w-10 h-10 text-purple-400 animate-spin" />
-            <p className="text-[11px] font-medium text-purple-200 mt-2">
-              {loading ? 'Resolving Stream...' : 'Buffering...'}
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/75 backdrop-blur-sm z-50 pointer-events-auto rounded-2xl">
+            <div className="relative flex items-center justify-center">
+              {/* Glowing backdrop aura */}
+              <div className="absolute w-20 h-20 rounded-full bg-purple-600/30 blur-xl animate-pulse" />
+              <Loader2 className="w-12 h-12 text-pink-500 animate-spin relative z-10 filter drop-shadow-[0_0_12px_rgba(236,72,153,0.8)]" />
+            </div>
+            <p className="text-xs font-bold text-white tracking-wide mt-3.5 bg-purple-950/80 px-4 py-1.5 rounded-full border border-purple-500/40 shadow-xl backdrop-blur-md">
+              {loading ? 'Resolving KUROIWA Stream...' : 'Buffering Video...'}
             </p>
           </div>
         )}
 
-        {/* Error State */}
+        {/* Error State Overlay */}
         {error && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0b0b14]/95 p-4 text-center z-40 rounded-2xl">
-            <AlertCircle className="w-10 h-10 text-red-500 mb-2" />
-            <h3 className="text-sm font-bold text-white">Stream Error</h3>
-            <p className="text-xs text-gray-400 max-w-xs mb-3">{errorMessage || 'Failed to play video.'}</p>
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0b0b14]/95 p-4 text-center z-50 rounded-2xl pointer-events-auto">
+            <div className="w-14 h-14 rounded-2xl bg-red-500/20 border border-red-500/40 flex items-center justify-center mb-3 shadow-lg shadow-red-500/20">
+              <AlertCircle className="w-8 h-8 text-red-500" />
+            </div>
+            <h3 className="text-base font-extrabold text-white">Stream Error</h3>
+            <p className="text-xs text-gray-300 max-w-xs mb-4 leading-relaxed">{errorMessage || 'Failed to play video.'}</p>
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 loadStream();
               }}
-              className="flex items-center gap-1.5 bg-purple-600 text-white px-4 py-1.5 rounded-lg text-xs font-semibold cursor-pointer"
+              className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-5 py-2 rounded-xl text-xs font-bold shadow-lg shadow-purple-600/40 transition-all transform hover:scale-105 active:scale-95 cursor-pointer"
             >
-              <RefreshCw className="w-3.5 h-3.5" /> Retry
+              <RefreshCw className="w-4 h-4" /> Retry Stream
             </button>
           </div>
         )}
 
-        {/* CENTER PLAY/PAUSE & 10s REWIND/FORWARD OVERLAY */}
-        {showControls && !loading && !error && (
+        {/* CENTER PLAY/PAUSE & 10s REWIND/FORWARD OVERLAY (Hidden during loading, buffering, or error) */}
+        {showControls && !loading && !isBuffering && !error && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[1px] z-20 pointer-events-none transition-opacity">
             <div className="flex items-center gap-6 pointer-events-auto" onClick={(e) => e.stopPropagation()} onTouchEnd={(e) => e.stopPropagation()}>
               <button
@@ -1203,7 +1256,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
                     </span>
                   </h3>
                   <p className="text-[11px] text-gray-400 truncate max-w-[220px]">
-                    {resolverData?.animeTitle || 'ANIZENX Streaming'}
+                    {resolverData?.animeTitle || 'KUROIWA Streaming'}
                   </p>
                 </div>
               </div>

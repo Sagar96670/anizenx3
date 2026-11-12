@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Sparkles, ShieldAlert, Heart } from 'lucide-react';
+import { ShieldAlert, Heart } from 'lucide-react';
+import { KuroiwaLogo } from './KuroiwaLogo';
 
 interface FooterProps {
   onOpenBloggerModal?: () => void;
@@ -25,14 +26,9 @@ export const Footer: React.FC<FooterProps> = ({ onNavigateTab }) => {
         {/* Main Footer Content */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-8 sm:gap-10">
           
-          {/* Column 1: ANIZENX Branding & Short Description */}
+          {/* Column 1: KUROIWA Branding & Short Description */}
           <div className="md:col-span-5 space-y-3.5">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-purple-600 via-pink-600 to-amber-500 flex items-center justify-center shadow-lg shadow-purple-600/30">
-                <Sparkles className="w-4.5 h-4.5 text-white" />
-              </div>
-              <span className="text-xl font-black text-white tracking-wide">ANIZENX</span>
-            </div>
+            <KuroiwaLogo size="md" />
             <p className="text-xs sm:text-sm text-gray-400 leading-relaxed max-w-sm">
               Your ultimate destination for anime streaming and discovering your favorite anime series.
             </p>
@@ -136,13 +132,13 @@ export const Footer: React.FC<FooterProps> = ({ onNavigateTab }) => {
             <span>Content Disclaimer &amp; Notice</span>
           </div>
           <p className="text-[11px] sm:text-xs text-gray-400 leading-relaxed">
-            ANIZENX is an anime discovery and streaming interface that uses third-party sources and services to provide anime information and streaming links. Anime titles, posters, metadata and streaming availability may be provided by external platforms. ANIZENX does not claim ownership of third-party content. All trademarks and copyrights belong to their respective owners.
+            KUROIWA is an anime discovery and streaming interface that uses third-party sources and services to provide anime information and streaming links. Anime titles, posters, metadata and streaming availability may be provided by external platforms. KUROIWA does not claim ownership of third-party content. All trademarks and copyrights belong to their respective owners.
           </p>
         </div>
 
         {/* Copyright */}
         <div className="pt-4 border-t border-purple-900/20 flex flex-col sm:flex-row items-center justify-between text-xs text-gray-500 gap-2">
-          <p>&copy; 2026 ANIZENX. All rights reserved.</p>
+          <p>&copy; 2026 KUROIWA. All rights reserved.</p>
           <p className="flex items-center gap-1">
             Made with <Heart className="w-3.5 h-3.5 text-pink-500 fill-pink-500" /> for Anime Fans
           </p>
@@ -161,7 +157,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigateTab }) => {
 
             {modalType === 'contact' && (
               <p className="text-xs text-gray-300 leading-relaxed">
-                Have questions or feedback? You can reach out to the ANIZENX team for support or community suggestions.
+                Have questions or feedback? You can reach out to the KUROIWA team for support or community suggestions.
               </p>
             )}
 
@@ -173,7 +169,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigateTab }) => {
 
             {modalType === 'privacy' && (
               <p className="text-xs text-gray-300 leading-relaxed">
-                ANIZENX respects your privacy. Session data and local storage are used exclusively to remember watch preferences. We do not store personal tracking data.
+                KUROIWA respects your privacy. Session data and local storage are used exclusively to remember watch preferences. We do not store personal tracking data.
               </p>
             )}
 

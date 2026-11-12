@@ -1,6 +1,6 @@
 {
-  "name": "ANIZENX - Premium Anime Streaming & Blogger Theme",
-  "description": "A fully functional anime streaming frontend connected to ANIZENX with a custom premium dark purple neon UI and Google Blogger XML theme generator.",
+  "name": "KUROIWA - Premium Anime Streaming & Blogger Theme",
+  "description": "A fully functional anime streaming frontend connected to KUROIWA with a custom premium dark purple neon UI and Google Blogger XML theme generator.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

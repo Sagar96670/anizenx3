@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Film, Search, Menu, X, Sparkles, Download, Home, Tv, Clapperboard, Shield, Trophy } from 'lucide-react';
+import { KuroiwaLogo } from './KuroiwaLogo';
 
 interface NavbarProps {
   currentTab: string;
@@ -35,23 +36,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   return (
     <header className="sticky top-0 z-50 bg-[#0b0b14]/90 backdrop-blur-xl border-b border-purple-900/30 shadow-2xl shadow-purple-950/20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
-        {/* Logo */}
-        <div 
-          onClick={() => setCurrentTab('home')}
-          className="flex items-center gap-3 cursor-pointer group"
-        >
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-600/40 group-hover:scale-105 transition-transform">
-            <Sparkles className="w-5 h-5 text-white animate-pulse" />
-          </div>
-          <div>
-            <span className="text-2xl font-black tracking-wider bg-gradient-to-r from-white via-purple-200 to-pink-400 bg-clip-text text-transparent">
-              ANIZENX
-            </span>
-            <span className="block text-[10px] tracking-widest text-purple-400 font-semibold uppercase">
-              Streaming &amp; Blogger Theme
-            </span>
-          </div>
-        </div>
+        {/* KUROIWA Logo */}
+        <KuroiwaLogo onClick={() => setCurrentTab('home')} size="md" />
 
         {/* Desktop Nav Links */}
         <nav className="hidden md:flex items-center gap-7">

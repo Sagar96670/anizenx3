@@ -26,6 +26,7 @@ const GENRES = [
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<string>('home');
+  const [previousCatalogTab, setPreviousCatalogTab] = useState<string>('home');
   const [mediaType, setMediaType] = useState<'anime' | 'movie'>('anime');
   const [selectedAnimeId, setSelectedAnimeId] = useState<string>('');
   const [selectedMovieId, setSelectedMovieId] = useState<string>('');
@@ -35,7 +36,7 @@ export default function App() {
   const [bloggerModalOpen, setBloggerModalOpen] = useState<boolean>(false);
 
   // Sync state with URL search parameters
-  const updateUrl = (params: Record<string, string | null>) => {
+  const updateUrl = (params: Record<string, string | null>, replace = false) => {
     try {
       const url = new URL(window.location.href);
       Object.entries(params).forEach(([key, val]) => {
@@ -45,7 +46,11 @@ export default function App() {
           url.searchParams.set(key, val);
         }
       });
-      window.history.pushState({}, '', url.toString());
+      if (replace) {
+        window.history.replaceState({}, '', url.toString());
+      } else {
+        window.history.pushState({}, '', url.toString());
+      }
     } catch {
       // Fallback if URL manipulation fails in sandbox
     }
@@ -98,6 +103,9 @@ export default function App() {
 
   const handleSelectItem = (id: string, type: 'anime' | 'movie') => {
     const cleanId = String(id);
+    if (['home', 'anime-list', 'movie-list', 'rankings'].includes(currentTab)) {
+      setPreviousCatalogTab(currentTab);
+    }
     if (type === 'anime') {
       setSelectedAnimeId(cleanId);
       setMediaType('anime');
@@ -107,6 +115,7 @@ export default function App() {
         movie: null,
         'watch-movie': null,
         'watch-anime': null,
+        ep: null,
         tab: 'anime-detail',
       });
     } else {
@@ -118,6 +127,7 @@ export default function App() {
         anime: null,
         'watch-movie': null,
         'watch-anime': null,
+        ep: null,
         tab: 'movie-detail',
       });
     }
@@ -163,6 +173,9 @@ export default function App() {
       <Navbar
         currentTab={currentTab}
         setCurrentTab={(tab) => {
+          if (['home', 'anime-list', 'movie-list', 'rankings'].includes(tab)) {
+            setPreviousCatalogTab(tab);
+          }
           setCurrentTab(tab);
           updateUrl({
             tab,
@@ -170,11 +183,13 @@ export default function App() {
             anime: null,
             'watch-movie': null,
             'watch-anime': null,
+            ep: null,
           });
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
         onSearch={(query) => {
           setSearchQuery(query);
+          setPreviousCatalogTab('anime-list');
           setCurrentTab('anime-list');
           updateUrl({
             tab: 'anime-list',
@@ -182,6 +197,7 @@ export default function App() {
             anime: null,
             'watch-movie': null,
             'watch-anime': null,
+            ep: null,
           });
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
@@ -199,11 +215,13 @@ export default function App() {
             onSelectEpisode={handleSelectEpisode}
             onViewAll={(category) => {
               if (category === 'movies') {
+                setPreviousCatalogTab('movie-list');
                 setCurrentTab('movie-list');
-                updateUrl({ tab: 'movie-list', movie: null, anime: null, 'watch-movie': null, 'watch-anime': null });
+                updateUrl({ tab: 'movie-list', movie: null, anime: null, 'watch-movie': null, 'watch-anime': null, ep: null });
               } else {
+                setPreviousCatalogTab('anime-list');
                 setCurrentTab('anime-list');
-                updateUrl({ tab: 'anime-list', movie: null, anime: null, 'watch-movie': null, 'watch-anime': null });
+                updateUrl({ tab: 'anime-list', movie: null, anime: null, 'watch-movie': null, 'watch-anime': null, ep: null });
               }
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
@@ -229,12 +247,18 @@ export default function App() {
           <AnimeDetailView
             animeId={selectedAnimeId}
             onBack={() => {
-              if (window.history.length > 1) {
-                window.history.back();
-              } else {
-                setCurrentTab('home');
-                updateUrl({ tab: 'home', anime: null, movie: null, 'watch-movie': null, 'watch-anime': null });
-              }
+              const targetTab = ['home', 'anime-list', 'movie-list', 'rankings'].includes(previousCatalogTab)
+                ? previousCatalogTab
+                : 'home';
+              setCurrentTab(targetTab);
+              updateUrl({
+                tab: targetTab,
+                anime: null,
+                movie: null,
+                'watch-movie': null,
+                'watch-anime': null,
+                ep: null,
+              });
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
             onSelectEpisode={handleSelectEpisode}
@@ -246,12 +270,18 @@ export default function App() {
           <MovieDetailView
             movieId={selectedMovieId}
             onBack={() => {
-              if (window.history.length > 1) {
-                window.history.back();
-              } else {
-                setCurrentTab('movie-list');
-                updateUrl({ tab: 'movie-list', anime: null, movie: null, 'watch-movie': null, 'watch-anime': null });
-              }
+              const targetTab = ['home', 'anime-list', 'movie-list', 'rankings'].includes(previousCatalogTab)
+                ? previousCatalogTab
+                : 'movie-list';
+              setCurrentTab(targetTab);
+              updateUrl({
+                tab: targetTab,
+                anime: null,
+                movie: null,
+                'watch-movie': null,
+                'watch-anime': null,
+                ep: null,
+              });
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
             onWatchMovie={handleWatchMovie}
@@ -267,10 +297,10 @@ export default function App() {
             onBack={() => {
               if (mediaType === 'movie') {
                 setCurrentTab('movie-detail');
-                updateUrl({ movie: selectedMovieId, 'watch-movie': null, tab: 'movie-detail' });
+                updateUrl({ movie: selectedMovieId, 'watch-movie': null, ep: null, tab: 'movie-detail' }, true);
               } else {
                 setCurrentTab('anime-detail');
-                updateUrl({ anime: selectedAnimeId, 'watch-anime': null, tab: 'anime-detail' });
+                updateUrl({ anime: selectedAnimeId, 'watch-anime': null, ep: null, tab: 'anime-detail' }, true);
               }
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}

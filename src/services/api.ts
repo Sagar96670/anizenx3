@@ -22,7 +22,7 @@ export const API_BASE_URL = (envBase || LIVE_API_BASE).replace(/\/+$/, '');
 // CLIENT-SIDE HIGH-PERFORMANCE CACHE ENGINE
 // ==========================================
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes TTL for catalog & details
-const STORAGE_PREFIX = 'anizenx_cache_';
+const STORAGE_PREFIX = 'kuroiwa_cache_';
 
 interface CacheEntry<T> {
   data: T;
@@ -103,7 +103,7 @@ export function invalidateAnimeCache(animeId?: string): void {
 }
 
 /**
- * Universal fetch wrapper that directly calls the live ANIZENX API
+ * Universal fetch wrapper that directly calls the live KUROIWA API
  * with fallback support for relative endpoints if running behind a local/custom proxy.
  */
 async function apiFetch(endpoint: string, options?: RequestInit): Promise<Response> {

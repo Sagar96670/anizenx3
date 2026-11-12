@@ -652,7 +652,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack, onOpenPlayer }) 
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-purple-600 to-pink-500 flex items-center justify-center mx-auto shadow-xl shadow-purple-600/40">
             <Lock className="w-7 h-7 text-white" />
           </div>
-          <h2 className="text-2xl font-black text-white tracking-wide">ANIZENX Admin</h2>
+          <h2 className="text-2xl font-black text-white tracking-wide">KUROIWA Admin</h2>
           <p className="text-xs text-purple-300">
             Anime Episode &amp; Season Management Console
           </p>
@@ -679,7 +679,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack, onOpenPlayer }) 
               className="w-full bg-[#18182e] border border-purple-500/30 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-400 transition-all"
             />
             <p className="text-[11px] text-gray-400 mt-1.5">
-              Default development key: <code className="text-pink-400">anizenx-admin-2026</code>
+              Default development key: <code className="text-pink-400">kuroiwa-admin-2026</code>
             </p>
           </div>
 
@@ -715,7 +715,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack, onOpenPlayer }) 
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-black text-white tracking-wide">ANIZENX Episode Manager</h1>
+              <h1 className="text-2xl font-black text-white tracking-wide">KUROIWA Episode Manager</h1>
               <span className="bg-pink-600/30 text-pink-300 border border-pink-500/40 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
                 Admin Secure
               </span>
@@ -1774,7 +1774,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack, onOpenPlayer }) 
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                  <Database className="w-5 h-5 text-purple-400" /> ANIZENX Backend Storage Engine
+                  <Database className="w-5 h-5 text-purple-400" /> KUROIWA Backend Storage Engine
                 </h2>
                 <span className="bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -1782,7 +1782,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack, onOpenPlayer }) 
                 </span>
               </div>
               <p className="text-xs text-gray-400 mt-1">
-                Manual episodes and seasons are stored natively in the ANIZENX backend storage system. No third-party API keys or external services required.
+                Manual episodes and seasons are stored natively in the KUROIWA backend storage system. No third-party API keys or external services required.
               </p>
             </div>
 
@@ -1832,7 +1832,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBack, onOpenPlayer }) 
             <div className="flex flex-wrap items-center gap-4 pt-2">
               <a
                 href="/api/admin/backup/export"
-                download="anizenx-manual-episodes-backup.json"
+                download="kuroiwa-manual-episodes-backup.json"
                 className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-lg cursor-pointer"
               >
                 <Download className="w-4 h-4" /> Export All Data (.json)

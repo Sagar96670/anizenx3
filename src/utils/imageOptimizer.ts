@@ -1,5 +1,5 @@
 /**
- * Image optimization utilities for ANIZENX
+ * Image optimization utilities for KUROIWA
  * Optimizes TMDB poster & backdrop URLs with responsive dimensions,
  * cutting mobile image data transfer by 60-80% without losing quality.
  */

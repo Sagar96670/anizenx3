@@ -32,7 +32,7 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const API_BASE = 'https://anime-api-new.antideploy.app';
-const ADMIN_SECRET = process.env.ADMIN_SECRET || 'anizenx-admin-2026';
+const ADMIN_SECRET = process.env.ADMIN_SECRET || 'kuroiwa-admin-2026';
 
 // Server-side active tokens store (in-memory, expires after 24h)
 const activeAdminTokens = new Map<string, number>();
@@ -75,6 +75,9 @@ async function startServer() {
   const PORT = parseInt(process.env.PORT || '3000', 10);
   const isProduction = process.env.NODE_ENV === 'production';
 
+  // Enable trust proxy for reverse proxies (Vite / AI Studio proxy)
+  app.set('trust proxy', 1);
+
   // Apply Helmet Security Headers
   app.use(
     helmet({
@@ -108,6 +111,7 @@ async function startServer() {
     max: 350,
     standardHeaders: true,
     legacyHeaders: false,
+    validate: { xForwardedForHeader: false, default: false },
     message: {
       status: false,
       error: 'Too many requests from this IP address. Please try again after a few minutes.',
@@ -121,6 +125,7 @@ async function startServer() {
     max: 5,
     standardHeaders: true,
     legacyHeaders: false,
+    validate: { xForwardedForHeader: false, default: false },
     message: {
       status: false,
       error: 'Too many failed admin authentication attempts. Account temporarily locked for 15 minutes.',
@@ -140,7 +145,7 @@ async function startServer() {
     }
 
     const s = secret.trim();
-    const validSecrets = [ADMIN_SECRET, 'anizenx-admin-2026', 'anizenx_admin_2026'];
+    const validSecrets = [ADMIN_SECRET, 'kuroiwa-admin-2026', 'kuroiwa_admin_2026', 'anizenx-admin-2026', 'anizenx_admin_2026'];
 
     let isMatch = false;
     for (const validSecret of validSecrets) {
@@ -432,7 +437,7 @@ async function startServer() {
 
   app.get('/api/admin/backup/export', requireAdminAuth, (_, res) => {
     const data = exportAllData();
-    res.setHeader('Content-Disposition', 'attachment; filename="anizenx-manual-episodes-backup.json"');
+    res.setHeader('Content-Disposition', 'attachment; filename="kuroiwa-manual-episodes-backup.json"');
     res.setHeader('Content-Type', 'application/json');
     res.send(JSON.stringify(data, null, 2));
   });
@@ -501,7 +506,7 @@ async function startServer() {
   // RESOLVER INTERCEPT & BLAKITE PROXY
   // If a manual episode override exists for the requested episode,
   // return the manual stream immediately!
-  // Otherwise, proxy to the live ANIZENX resolver.
+  // Otherwise, proxy to the live KUROIWA resolver.
   // ==========================================
   app.get('/api/resolve/blakite/:animeId/:episodeId', async (req, res) => {
     const { animeId, episodeId } = req.params;
@@ -547,7 +552,7 @@ async function startServer() {
       } catch {
         return res.status(apiRes.status || 502).json({
           status: false,
-          error: 'Unable to fetch stream from live ANIZENX server (upstream error).',
+          error: 'Unable to fetch stream from live KUROIWA server (upstream error).',
         });
       }
     } catch (err: any) {
@@ -584,7 +589,7 @@ async function startServer() {
       }
 
       const upstreamHeaders: Record<string, string> = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ANIZENX-Proxy/1.0',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) KUROIWA-Proxy/1.0',
         'Accept': '*/*',
       };
 

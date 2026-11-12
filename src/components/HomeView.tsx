@@ -106,9 +106,9 @@ export const HomeView: React.FC<HomeViewProps> = ({ onSelectItem, onViewAll, onS
         <div className="w-16 h-16 bg-red-500/20 rounded-2xl flex items-center justify-center mx-auto text-red-400">
           <RefreshCw className="w-8 h-8 animate-spin" />
         </div>
-        <h3 className="text-xl font-bold text-white">Failed to Connect to ANIZENX</h3>
+        <h3 className="text-xl font-bold text-white">Failed to Connect to KUROIWA</h3>
         <p className="text-gray-400 text-sm">
-          Unable to fetch data from the live ANIZENX server. Please check your connection and retry.
+          Unable to fetch data from the live KUROIWA server. Please check your connection and retry.
         </p>
         <button
           onClick={() => {

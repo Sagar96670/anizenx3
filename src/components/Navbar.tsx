@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Film, Search, Menu, X, Sparkles, Download, Home, Tv, Clapperboard, Shield } from 'lucide-react';
+import { Film, Search, Menu, X, Sparkles, Download, Home, Tv, Clapperboard, Shield, Trophy } from 'lucide-react';
 
 interface NavbarProps {
   currentTab: string;
@@ -81,6 +81,14 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
           >
             <Clapperboard className="w-4 h-4" /> Movies
+          </button>
+          <button
+            onClick={() => setCurrentTab('rankings')}
+            className={`flex items-center gap-2 text-sm font-medium transition-colors cursor-pointer ${
+              currentTab === 'rankings' ? 'text-amber-400 font-semibold' : 'text-gray-300 hover:text-white'
+            }`}
+          >
+            <Trophy className="w-4 h-4 text-amber-400" /> Rankings
           </button>
           <button
             onClick={() => setCurrentTab('admin')}
@@ -213,6 +221,16 @@ export const Navbar: React.FC<NavbarProps> = ({
             className="block w-full text-left px-3 py-2 rounded-lg text-base font-medium text-gray-200 hover:bg-purple-600/20"
           >
             Movies
+          </button>
+          <button
+            onClick={() => {
+              setCurrentTab('rankings');
+              setMobileMenuOpen(false);
+            }}
+            className="flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg text-base font-medium text-amber-300 hover:bg-purple-600/20"
+          >
+            <Trophy className="w-4 h-4 text-amber-400" />
+            <span>Top Rankings</span>
           </button>
           <button
             onClick={() => {

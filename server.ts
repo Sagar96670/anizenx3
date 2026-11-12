@@ -3,6 +3,8 @@ import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import {
   getManualEpisodes,
   findManualEpisode,
@@ -22,6 +24,10 @@ import {
   blockSeason,
   blockAnime,
   unblockRecord,
+  getLatestUpdates,
+  syncCatalogUpdates,
+  recordEpisodeView,
+  getAnimeRankings,
 } from './server_storage';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -69,7 +75,60 @@ async function startServer() {
   const PORT = parseInt(process.env.PORT || '3000', 10);
   const isProduction = process.env.NODE_ENV === 'production';
 
-  app.use(express.json({ limit: '10mb' }));
+  // Apply Helmet Security Headers
+  app.use(
+    helmet({
+      contentSecurityPolicy: false, // Managed custom headers for media/hls compatibility
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+      crossOriginEmbedderPolicy: false,
+    })
+  );
+
+  // Apply Custom HTTP Security Headers & Anti-Sniffing Controls
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    next();
+  });
+
+  // Strict Protection: Deny direct HTTP access to private JSON database files
+  app.use(['/data', '/data/*'], (_req, res) => {
+    return res.status(403).json({
+      status: false,
+      error: 'Forbidden: Private system storage directory is not accessible via web.',
+    });
+  });
+
+  // Rate Limiting: Global API Rate Limiter (350 requests per 15 min per IP)
+  const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 350,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      status: false,
+      error: 'Too many requests from this IP address. Please try again after a few minutes.',
+    },
+  });
+  app.use('/api/', apiLimiter);
+
+  // Rate Limiting: Sensitive Admin Login Brute-Force Protection (5 failed attempts per 15 min)
+  const adminLoginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      status: false,
+      error: 'Too many failed admin authentication attempts. Account temporarily locked for 15 minutes.',
+    },
+  });
+  app.use('/api/admin/login', adminLoginLimiter);
+
+  app.use(express.json({ limit: '5mb' }));
 
   // ==========================================
   // ADMIN AUTHENTICATION ENDPOINTS
@@ -81,7 +140,19 @@ async function startServer() {
     }
 
     const s = secret.trim();
-    if (s === ADMIN_SECRET || s === 'anizenx-admin-2026' || s === 'anizenx_admin_2026') {
+    const validSecrets = [ADMIN_SECRET, 'anizenx-admin-2026', 'anizenx_admin_2026'];
+
+    let isMatch = false;
+    for (const validSecret of validSecrets) {
+      const bufA = Buffer.from(s);
+      const bufB = Buffer.from(validSecret);
+      if (bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB)) {
+        isMatch = true;
+        break;
+      }
+    }
+
+    if (isMatch) {
       const token = generateAdminToken();
       return res.json({
         status: true,
@@ -143,6 +214,56 @@ async function startServer() {
     }
     res.json({ status: true, blocks: store });
   });
+
+  // ==========================================
+  // LATEST UPDATES & RANKING SYSTEM APIS
+  // ==========================================
+  app.get('/api/updates/latest', (req, res) => {
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 40;
+    const updates = getLatestUpdates(limit);
+    res.json({ status: true, total: updates.length, updates });
+  });
+
+  app.post('/api/updates/sync', (req, res) => {
+    const liveCatalog = Array.isArray(req.body?.catalog) ? req.body.catalog : [];
+    const updates = syncCatalogUpdates(liveCatalog);
+    res.json({ status: true, total: updates.length, updates });
+  });
+
+  app.post('/api/views/track', (req, res) => {
+    const { animeId, season, episode, animeTitle, poster, backdrop, genres } = req.body || {};
+    if (!animeId) {
+      return res.status(400).json({ status: false, error: 'animeId is required' });
+    }
+
+    const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0] || req.ip || 'client';
+    const result = recordEpisodeView({
+      animeId: String(animeId),
+      season: season ? Number(season) : 1,
+      episode: episode ? Number(episode) : 1,
+      animeTitle,
+      poster,
+      backdrop,
+      genres,
+      clientIp,
+    });
+
+    res.json(result);
+  });
+
+  app.get('/api/rankings', (req, res) => {
+    const limit = req.query.limit as string | undefined;
+    const type = (req.query.type as string) === 'trending' ? 'trending' : 'total';
+    const rankings = getAnimeRankings(limit, type);
+    res.json({ status: true, total: rankings.length, rankings });
+  });
+
+  app.get('/api/trending', (req, res) => {
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 15;
+    const trending = getAnimeRankings(limit, 'trending');
+    res.json({ status: true, total: trending.length, trending });
+  });
+
 
 
   // Helper: Resolve multi-quality manual stream strictly based on available quality URLs
@@ -446,6 +567,20 @@ async function startServer() {
       const parsedUrl = new URL(videoUrl);
       if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
         return res.status(400).json({ status: false, error: 'Invalid URL protocol.' });
+      }
+
+      // SSRF Guard: Block internal IP addresses, loopback, and cloud metadata services
+      const hostname = parsedUrl.hostname.toLowerCase();
+      const blockedHosts = ['localhost', '127.0.0.1', '0.0.0.0', '169.254.169.254', '::1'];
+      if (
+        blockedHosts.includes(hostname) ||
+        hostname.startsWith('192.168.') ||
+        hostname.startsWith('10.') ||
+        hostname.startsWith('172.16.') ||
+        hostname.endsWith('.internal') ||
+        hostname.endsWith('.local')
+      ) {
+        return res.status(403).json({ status: false, error: 'Forbidden: Access to private internal hosts is restricted.' });
       }
 
       const upstreamHeaders: Record<string, string> = {

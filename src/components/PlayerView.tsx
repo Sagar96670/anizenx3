@@ -16,10 +16,15 @@ import {
   RefreshCw,
   RotateCcw,
   RotateCw,
+  Copy,
+  Check,
+  X,
+  Sparkles,
+  ExternalLink,
 } from 'lucide-react';
 import Hls from 'hls.js';
-import { ResolverResponse } from '../types';
-import { resolveBlakiteVideo } from '../services/api';
+import { ResolverResponse, DownloadResponse } from '../types';
+import { resolveBlakiteVideo, fetchBlakiteDownloadUrls, trackEpisodeViewAPI } from '../services/api';
 import { getPlayableStreamUrl } from '../utils/videoProxy';
 
 interface PlayerViewProps {
@@ -64,11 +69,352 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
   const [showControls, setShowControls] = useState(true);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Quality Download Modal States
+  const [downloadModalOpen, setDownloadModalOpen] = useState(false);
+  const [downloadData, setDownloadData] = useState<DownloadResponse | null>(null);
+  const [downloadLoading, setDownloadLoading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [copiedQuality, setCopiedQuality] = useState<string | null>(null);
+  const [downloadingQuality, setDownloadingQuality] = useState<string | null>(null);
+  const [downloadNotice, setDownloadNotice] = useState<{ type: 'success' | 'info'; message: string } | null>(null);
+
   // Parse episode number
   const currentEpNum = episodeId.includes('-') ? parseInt(episodeId.split('-')[1], 10) : 1;
 
   // Fetch initial or quality-switched video stream
   const targetEpisodeId = isMovie ? (episodeId || '0') : episodeId;
+
+  const handleOpenDownloadModal = async (e?: React.MouseEvent | React.TouchEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    setDownloadModalOpen(true);
+    setDownloadLoading(true);
+    setDownloadError(null);
+    setDownloadData(null);
+    setDownloadNotice(null);
+
+    const targetTmdb = resolverData?.tmdbId || animeId;
+    const targetSeason = isMovie ? 1 : (resolverData?.season || 1);
+    const targetEpisode = isMovie ? (parseInt(targetEpisodeId, 10) || 1) : (resolverData?.episode || currentEpNum || 1);
+
+    try {
+      if (resolverData?.source === 'manual') {
+        const res = await fetchBlakiteDownloadUrls(targetTmdb, targetSeason, targetEpisode);
+        if (res && res.status && res.downloads && Object.keys(res.downloads).length > 0) {
+          setDownloadData(res);
+        } else if (resolverData.video_url) {
+          setDownloadData({
+            status: true,
+            available_qualities: [resolverData.quality || '720p'],
+            downloads: { [resolverData.quality || '720p']: resolverData.video_url },
+          });
+        } else {
+          setDownloadError(res?.error || 'No quality download links available.');
+        }
+      } else {
+        const res = await fetchBlakiteDownloadUrls(targetTmdb, targetSeason, targetEpisode);
+        if (res && res.status && res.downloads && Object.keys(res.downloads).length > 0) {
+          setDownloadData(res);
+        } else {
+          setDownloadError(res?.error || 'No quality-wise download links available.');
+        }
+      }
+    } catch (err: any) {
+      console.error('Download fetch error:', err);
+      setDownloadError(err?.message || 'Failed to fetch download links.');
+    } finally {
+      setDownloadLoading(false);
+    }
+  };
+
+  const handleCopyDownloadUrl = (quality: string, url: string) => {
+    try {
+      navigator.clipboard.writeText(url);
+      setCopiedQuality(quality);
+      setTimeout(() => setCopiedQuality(null), 2500);
+    } catch {
+      const el = document.createElement('textarea');
+      el.value = url;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      setCopiedQuality(quality);
+      setTimeout(() => setCopiedQuality(null), 2500);
+    }
+  };
+
+  // Active Web Worker reference for background segment downloading
+  const activeWorkerRef = useRef<Worker | null>(null);
+
+  // Terminate worker if component unmounts
+  useEffect(() => {
+    return () => {
+      if (activeWorkerRef.current) {
+        activeWorkerRef.current.terminate();
+        activeWorkerRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleInitiateDownload = async (e: React.MouseEvent, q: string, url: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Terminate any previous worker if user clicks a new quality
+    if (activeWorkerRef.current) {
+      activeWorkerRef.current.terminate();
+      activeWorkerRef.current = null;
+    }
+
+    setDownloadingQuality(q);
+
+    const titleSlug = (resolverData?.animeTitle || 'ANIZENX_Episode')
+      .replace(/[^a-zA-Z0-9]/g, '_');
+    const fileName = `${titleSlug}_S${resolverData?.season || 1}E${resolverData?.episode || currentEpNum}_${q}.ts`;
+
+    setDownloadNotice({
+      type: 'info',
+      message: `Initializing Blakite segment downloader for ${q}...`,
+    });
+
+    // Inline Web Worker reproducing original Blakite download.php mechanism
+    const workerScript = `
+      self.onmessage = async function(e) {
+        const { url: t, fileName: a } = e.data;
+        let s;
+        const n = indexedDB.open('VideoDownloads', 1);
+        n.onupgradeneeded = function(ev) {
+          s = ev.target.result;
+          if (!s.objectStoreNames.contains('segments')) {
+            s.createObjectStore('segments', { keyPath: ['url', 'index'] });
+          }
+        };
+        await new Promise(res => {
+          n.onsuccess = function(ev) {
+            s = ev.target.result;
+            res();
+          };
+          n.onerror = function() {
+            res();
+          };
+        });
+
+        try {
+          const pathParts = t.split('/');
+          pathParts.pop();
+          const baseUrl = pathParts.join('/') + '/';
+          self.postMessage({ status: 'Analyzing video playlist...' });
+
+          const playlistRes = await fetch(t);
+          if (!playlistRes.ok) throw new Error('Failed to load playlist: HTTP ' + playlistRes.status);
+          const playlistText = await playlistRes.text();
+          if (playlistText.trim().startsWith('<')) throw new Error('Invalid playlist format returned by CDN');
+
+          const rawLines = playlistText.split('\\n').map(l => l.trim()).filter(l => l);
+          const segmentLines = rawLines.filter(l => !l.startsWith('#'));
+          if (segmentLines.length === 0) throw new Error('No video segments found in playlist');
+
+          self.postMessage({ status: 'Downloading ' + segmentLines.length + ' video segments...' });
+
+          const segments = new Array(segmentLines.length).fill(null);
+          let downloadedCount = 0;
+          let totalBytes = 0;
+          const BATCH_SIZE = 5;
+
+          // Check IndexedDB cache first
+          if (s) {
+            try {
+              const tx = s.transaction(['segments'], 'readonly');
+              const store = tx.objectStore('segments');
+              for (let i = 0; i < segmentLines.length; i++) {
+                const req = store.get([t, i]);
+                req.onsuccess = function(ev) {
+                  if (ev.target.result) {
+                    segments[i] = new Uint8Array(ev.target.result.data);
+                    downloadedCount++;
+                    totalBytes += ev.target.result.data.byteLength;
+                  }
+                };
+              }
+              await new Promise(res => tx.oncomplete = res);
+            } catch (err) {}
+          }
+
+          let initialPct = Math.round((downloadedCount / segmentLines.length) * 90);
+          let initialMb = (totalBytes / 1024 / 1024).toFixed(1);
+          self.postMessage({ progress: initialPct, progressText: downloadedCount + '/' + segmentLines.length + ' segments (' + initialPct + '%) • ' + initialMb + ' MB' });
+
+          // Download missing segments in batches of 5
+          for (let i = 0; i < segmentLines.length; i += BATCH_SIZE) {
+            const batch = segmentLines.slice(i, i + BATCH_SIZE).map((segment, idx) => ({ segment, index: i + idx }));
+            const results = await Promise.all(
+              batch.map(async ({ segment, index }) => {
+                if (segments[index]) return { index, data: segments[index] };
+                try {
+                  let segUrl = segment;
+                  if (!segUrl.startsWith('http')) segUrl = baseUrl + segUrl;
+                  const res = await fetch(segUrl);
+                  if (!res.ok) throw new Error('Failed segment ' + (index + 1));
+                  const buf = await res.arrayBuffer();
+                  const bytes = new Uint8Array(buf);
+                  
+                  if (s) {
+                    try {
+                      const rw = s.transaction(['segments'], 'readwrite');
+                      rw.objectStore('segments').put({ url: t, index: index, data: buf });
+                      await new Promise(resEv => rw.oncomplete = resEv);
+                    } catch (e) {}
+                  }
+                  return { index, data: bytes };
+                } catch (err) {
+                  return { index, data: null };
+                }
+              })
+            );
+
+            results.sort((a, b) => a.index - b.index);
+            results.forEach(res => {
+              if (res.data && !segments[res.index]) {
+                segments[res.index] = res.data;
+                downloadedCount++;
+                totalBytes += res.data.byteLength;
+              }
+            });
+
+            let pct = Math.round((downloadedCount / segmentLines.length) * 90);
+            let mb = (totalBytes / 1024 / 1024).toFixed(1);
+            self.postMessage({ progress: pct, progressText: downloadedCount + '/' + segmentLines.length + ' segments (' + pct + '%) • ' + mb + ' MB' });
+          }
+
+          if (segments.includes(null)) {
+            const missing = segments.filter(s => s === null).length;
+            throw new Error('Failed to download ' + missing + ' video segments');
+          }
+
+          self.postMessage({ status: 'Merging video segments...' });
+          self.postMessage({ progress: 95, progressText: 'Merging video segments...' });
+
+          const totalLen = segments.reduce((acc, b) => acc + (b ? b.length : 0), 0);
+          const merged = new Uint8Array(totalLen);
+          let offset = 0;
+          for (const b of segments) {
+            if (b) {
+              merged.set(b, offset);
+              offset += b.length;
+            }
+          }
+
+          self.postMessage({ progress: 100, progressText: 'Assembly complete' });
+          self.postMessage({ blob: merged.buffer, fileName: a, size: totalLen, mime: 'video/mp2t' });
+        } catch (err) {
+          self.postMessage({ error: err.message });
+        }
+      };
+    `;
+
+    const blob = new Blob([workerScript], { type: 'application/javascript' });
+    const workerUrl = URL.createObjectURL(blob);
+    const worker = new Worker(workerUrl);
+    activeWorkerRef.current = worker;
+
+    worker.onmessage = (ev: MessageEvent) => {
+      const data = ev.data;
+      if (data.status) {
+        setDownloadNotice({
+          type: 'info',
+          message: data.status,
+        });
+      }
+      if (data.progress) {
+        setDownloadNotice({
+          type: 'info',
+          message: `Downloading ${q}: ${data.progressText}`,
+        });
+      }
+      if (data.error) {
+        console.error('Worker error:', data.error);
+        setDownloadNotice({
+          type: 'info',
+          message: `⚠️ Segment download error: ${data.error}. You can use Copy Link with IDM/1DM/VLC.`,
+        });
+        setDownloadingQuality(null);
+        worker.terminate();
+        URL.revokeObjectURL(workerUrl);
+        activeWorkerRef.current = null;
+        return;
+      }
+      if (data.blob) {
+        const mimeType = data.mime || 'video/mp2t';
+        const videoBlob = new Blob([data.blob], { type: mimeType });
+        const objectUrl = URL.createObjectURL(videoBlob);
+        
+        let finalFileName = data.fileName || `${titleSlug}_${q}.ts`;
+        if (!finalFileName.endsWith('.ts')) {
+          finalFileName = finalFileName.replace(/\.(mp4|tar)$/i, '') + '.ts';
+        }
+
+        const downloadAnchor = document.createElement('a');
+        downloadAnchor.href = objectUrl;
+        downloadAnchor.download = finalFileName;
+        downloadAnchor.style.display = 'none';
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+
+        // Clean IndexedDB cached segments for this URL after successful download
+        try {
+          const dbReq = indexedDB.open('VideoDownloads', 1);
+          dbReq.onsuccess = function(e: any) {
+            const db = e.target.result;
+            if (db.objectStoreNames.contains('segments')) {
+              const tx = db.transaction(['segments'], 'readwrite');
+              const store = tx.objectStore('segments');
+              const range = IDBKeyRange.bound([url, 0], [url, Number.POSITIVE_INFINITY]);
+              const cursorReq = store.openCursor(range);
+              cursorReq.onsuccess = function(cEv: any) {
+                const cursor = cEv.target.result;
+                if (cursor) {
+                  store.delete(cursor.primaryKey);
+                  cursor.continue();
+                }
+              };
+            }
+          };
+        } catch (e) {}
+
+        const finalMb = (data.size / (1024 * 1024)).toFixed(1);
+        setDownloadNotice({
+          type: 'success',
+          message: `✓ Download Complete! Assembled ${q} video file (${finalMb} MB). Saved as ${finalFileName}.`,
+        });
+
+        setDownloadingQuality(null);
+        setTimeout(() => {
+          document.body.removeChild(downloadAnchor);
+          URL.revokeObjectURL(objectUrl);
+          worker.terminate();
+          URL.revokeObjectURL(workerUrl);
+          activeWorkerRef.current = null;
+        }, 4000);
+      }
+    };
+
+    worker.onerror = (err) => {
+      console.error('Worker runtime error:', err);
+      setDownloadNotice({
+        type: 'info',
+        message: `⚠️ Worker failed to assemble stream. Copy link into IDM, 1DM, ADM, or VLC.`,
+      });
+      setDownloadingQuality(null);
+      worker.terminate();
+      URL.revokeObjectURL(workerUrl);
+      activeWorkerRef.current = null;
+    };
+
+    worker.postMessage({ url, fileName });
+  };
 
   const loadStream = async (qualityToLoad?: string) => {
     setLoading(true);
@@ -81,6 +427,15 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
         if (data.available_qualities && data.available_qualities.length > 0) {
           const apiQuals = data.available_qualities;
           setAvailableQualities(apiQuals.includes('Auto') ? apiQuals : ['Auto', ...apiQuals]);
+        }
+        // Track actual episode view on server (debounce handles anti-spam)
+        if (!qualityToLoad) {
+          trackEpisodeViewAPI({
+            animeId,
+            season: isMovie ? 1 : (data.season || 1),
+            episode: isMovie ? 1 : (data.episode || currentEpNum || 1),
+            animeTitle: data.animeTitle || (isMovie ? 'Anime Movie' : 'Anime Series'),
+          });
         }
       } else {
         setError(true);
@@ -325,7 +680,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
       setQualityMenuOpen(false);
       return;
     }
-    setShowControls((prev) => {
+    setShowControls((prev: boolean) => {
       const nextState = !prev;
       if (nextState && isPlaying) {
         resetControlsTimer();
@@ -431,7 +786,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
   const toggleQualityMenu = (e: React.MouseEvent | React.TouchEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    setQualityMenuOpen((prev) => {
+    setQualityMenuOpen((prev: boolean) => {
       const next = !prev;
       if (next) {
         setShowControls(true);
@@ -460,7 +815,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
         return;
       } else {
         const targetHeight = parseInt(q.replace('p', ''), 10);
-        const levelIdx = hlsRef.current.levels.findIndex((l) => l.height === targetHeight);
+        const levelIdx = hlsRef.current.levels.findIndex((l: { height?: number }) => l.height === targetHeight);
         if (levelIdx !== -1) {
           hlsRef.current.currentLevel = levelIdx;
           resetControlsTimer();
@@ -709,19 +1064,15 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
             </div>
 
             <div className="flex items-center gap-2 relative">
-              {resolverData?.video_url && (
-                <a
-                  href={resolverData.video_url}
-                  download
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-1 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-purple-200 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer"
-                  title="Download Video"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Download</span>
-                </a>
-              )}
+              <button
+                onClick={handleOpenDownloadModal}
+                onTouchEnd={handleOpenDownloadModal}
+                className="flex items-center gap-1.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-md shadow-purple-950/60 cursor-pointer"
+                title="Download Quality Wise Video"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Download</span>
+              </button>
 
               {/* QUALITY SETTINGS BUTTON & VISIBLE POPUP DROPDOWN */}
               <div className="relative">
@@ -752,7 +1103,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
                     <div className="px-3 py-1 text-[10px] font-bold text-purple-400 uppercase border-b border-purple-900/30">
                       Select Quality
                     </div>
-                    {availableQualities.map((q) => (
+                    {availableQualities.map((q: string) => (
                       <button
                         key={q}
                         onClick={(e) => {
@@ -831,6 +1182,164 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
           >
             Next <SkipForward className="w-3.5 h-3.5" />
           </button>
+        </div>
+      )}
+
+      {/* QUALITY-WISE DOWNLOAD MODAL */}
+      {downloadModalOpen && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[999999] flex items-center justify-center p-4">
+          <div className="max-w-md w-full bg-[#121222] border border-purple-500/40 rounded-3xl p-5 space-y-4 shadow-2xl relative animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-purple-950/80 border border-purple-500/40 text-pink-400">
+                  <Download className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
+                    Download Episode
+                    <span className="text-[10px] bg-purple-900/60 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/30 font-mono">
+                      {isMovie ? 'Movie' : `S${resolverData?.season || 1} E${resolverData?.episode || currentEpNum}`}
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-gray-400 truncate max-w-[220px]">
+                    {resolverData?.animeTitle || 'ANIZENX Streaming'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setDownloadModalOpen(false)}
+                className="p-1.5 rounded-xl bg-purple-950/60 text-gray-400 hover:text-white hover:bg-purple-900/60 border border-purple-500/30 transition-all cursor-pointer"
+                title="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            {downloadLoading ? (
+              <div className="py-8 flex flex-col items-center justify-center space-y-3">
+                <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
+                <p className="text-xs text-purple-200 font-medium">
+                  Fetching quality download links from Blakite CDN...
+                </p>
+              </div>
+            ) : downloadError ? (
+              <div className="py-6 flex flex-col items-center justify-center text-center space-y-3">
+                <AlertCircle className="w-8 h-8 text-red-400" />
+                <p className="text-xs text-red-200 font-medium max-w-xs">{downloadError}</p>
+                <button
+                  onClick={handleOpenDownloadModal}
+                  className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-500 text-white px-4 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition-all shadow-lg"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" /> Retry Loading Links
+                </button>
+              </div>
+            ) : downloadData && downloadData.downloads ? (
+              <div className="space-y-3">
+                <div className="text-[11px] font-semibold text-purple-300 flex items-center justify-between">
+                  <span>Select Video Quality</span>
+                  <span className="text-gray-400 text-[10px]">Blakite CDN High Speed</span>
+                </div>
+
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                  {(downloadData.available_qualities || Object.keys(downloadData.downloads)).map((q: string) => {
+                    const downloadUrl = downloadData.downloads?.[q];
+                    if (!downloadUrl) return null;
+                    const isCopied = copiedQuality === q;
+
+                    return (
+                      <div
+                        key={q}
+                        className="flex items-center justify-between bg-purple-950/40 border border-purple-500/30 hover:border-purple-500/60 p-2.5 rounded-2xl transition-all"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-1 rounded-xl bg-purple-900/80 text-purple-200 font-mono text-xs font-bold border border-purple-500/40">
+                            {q}
+                          </span>
+                          <span className="text-[10px] text-gray-400 font-semibold">
+                            {q === '1080p' ? 'Full HD' : q === '720p' ? 'HD' : 'SD'}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleCopyDownloadUrl(q, downloadUrl)}
+                            className="p-1.5 rounded-xl bg-purple-950/80 hover:bg-purple-900 text-purple-300 border border-purple-500/30 text-xs font-semibold transition-all cursor-pointer flex items-center gap-1"
+                            title="Copy Download URL"
+                          >
+                            {isCopied ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 text-green-400" />
+                                <span className="text-[10px] text-green-400">Copied</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5" />
+                                <span className="text-[10px] hidden sm:inline">Copy</span>
+                              </>
+                            )}
+                          </button>
+
+                          <button
+                            onClick={(e) => handleInitiateDownload(e, q, downloadUrl)}
+                            disabled={downloadingQuality === q}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white text-xs font-bold shadow-md shadow-purple-950/60 cursor-pointer transition-all disabled:opacity-50"
+                          >
+                            {downloadingQuality === q ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Download className="w-3.5 h-3.5" />
+                            )}
+                            <span>Download</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {downloadNotice && (
+                  <div
+                    className={`p-2.5 rounded-xl text-[11px] font-medium leading-relaxed border ${
+                      downloadNotice.type === 'success'
+                        ? 'bg-green-950/60 border-green-500/40 text-green-200'
+                        : 'bg-purple-950/70 border-purple-500/40 text-purple-200'
+                    }`}
+                  >
+                    {downloadNotice.message}
+                  </div>
+                )}
+
+                {/* Technical Note / Usage Guidance */}
+                <div className="bg-purple-950/30 border border-purple-500/20 rounded-xl p-2.5 text-[10px] text-purple-300/90 leading-relaxed space-y-1">
+                  <div className="font-bold text-pink-300 flex items-center justify-between">
+                    <span className="flex items-center gap-1"><Sparkles className="w-3 h-3" /> M3U8 Segment Processing Workflow</span>
+                    <a
+                      href={`https://blakiteapi.xyz/download.php?id=${encodeURIComponent(resolverData?.tmdbId || animeId)}&season=${encodeURIComponent(isMovie ? 1 : (resolverData?.season || 1))}&episode=${encodeURIComponent(isMovie ? (parseInt(targetEpisodeId, 10) || 1) : (resolverData?.episode || currentEpNum || 1))}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-pink-400 hover:text-white underline font-bold flex items-center gap-1 transition-colors"
+                    >
+                      Blakite Page <ExternalLink className="w-2.5 h-2.5" />
+                    </a>
+                  </div>
+                  <p>
+                    Downloads assemble video segments into a single <strong>.mp4</strong> file. If browser CORS limits direct segment downloading, use <strong>Copy Link</strong> with IDM/1DM/VLC or use the Blakite Download Page.
+                  </p>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="pt-2 border-t border-purple-900/40 flex justify-end">
+              <button
+                onClick={() => setDownloadModalOpen(false)}
+                className="px-4 py-1.5 rounded-xl bg-purple-950 hover:bg-purple-900 text-purple-300 text-xs font-bold border border-purple-500/30 cursor-pointer transition-all"
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

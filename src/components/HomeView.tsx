@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Play, Info, Star, ChevronRight, TrendingUp, Sparkles, Clapperboard, RefreshCw } from 'lucide-react';
 import { AnimeItem, MovieItem } from '../types';
 import { AnimeCard } from './AnimeCard';
+import { LatestUpdatesSection } from './LatestUpdatesSection';
+import { TopRankingsSection } from './TopRankingsSection';
+import { FeaturedHeroSlider } from './FeaturedHeroSlider';
 import {
   fetchAnimeList,
   fetchMoviesList,
@@ -13,9 +16,10 @@ import { getOptimizedImageUrl } from '../utils/imageOptimizer';
 interface HomeViewProps {
   onSelectItem: (id: string, type: 'anime' | 'movie') => void;
   onViewAll: (category: string) => void;
+  onSelectEpisode?: (animeId: string, episodeId: string, episodeNumber: number, seasonNumber: number) => void;
 }
 
-export const HomeView: React.FC<HomeViewProps> = ({ onSelectItem, onViewAll }) => {
+export const HomeView: React.FC<HomeViewProps> = ({ onSelectItem, onViewAll, onSelectEpisode }) => {
   // Synchronous cache hydration for instant 0ms first paint
   const initialCachedAnime = getSynchronousCachedAnimeList();
   const initialCachedMovies = getSynchronousCachedMoviesList();
@@ -73,7 +77,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onSelectItem, onViewAll }) =
     };
   }, []);
 
-  const featuredAnime = animeList.length > 0 ? animeList[0] : null;
+  const featuredAnimeList = animeList.slice(0, 6);
   const trendingAnime = animeList.slice(1, 11);
   const latestAnime = animeList.slice(11, 21);
   const popularAnime = animeList.slice(21, 31);
@@ -83,7 +87,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onSelectItem, onViewAll }) =
   if (loadingAnime && animeList.length === 0) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-8 space-y-10 animate-pulse">
-        <div className="w-full h-[450px] sm:h-[550px] bg-purple-950/20 rounded-3xl border border-purple-900/30" />
+        <div className="w-full h-[490px] sm:h-[440px] lg:h-[460px] bg-purple-950/20 rounded-3xl border border-purple-900/30" />
         <div className="space-y-4">
           <div className="h-7 w-44 bg-purple-950/30 rounded-lg" />
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 sm:gap-6">
@@ -128,79 +132,29 @@ export const HomeView: React.FC<HomeViewProps> = ({ onSelectItem, onViewAll }) =
   }
 
   return (
-    <div className="space-y-12 sm:space-y-16 pb-20">
-      {/* Hero Banner Section */}
-      {featuredAnime && (
-        <section className="relative w-full h-[480px] sm:h-[620px] overflow-hidden bg-gray-950">
-          <div className="absolute inset-0">
-            <img
-              src={getOptimizedImageUrl(featuredAnime.backdrop || featuredAnime.poster, 'backdrop')}
-              alt={featuredAnime.title}
-              loading="eager"
-              decoding="async"
-              className="w-full h-full object-cover filter brightness-75 scale-105"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-[#0b0b14] via-[#0b0b14]/60 to-transparent" />
-            <div className="absolute inset-0 bg-gradient-to-r from-[#0b0b14] via-[#0b0b14]/80 to-transparent" />
-          </div>
-
-          <div className="relative max-w-7xl mx-auto h-full px-4 sm:px-6 lg:px-8 flex flex-col justify-end pb-12 sm:pb-16">
-            <div className="max-w-2xl space-y-3 sm:space-y-4">
-              <div className="flex items-center gap-3">
-                <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider shadow-lg shadow-purple-600/40 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5" /> Featured Anime
-                </span>
-                <div className="flex items-center gap-1 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full border border-purple-500/40">
-                  <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
-                  <span className="text-sm font-bold text-white">{featuredAnime.rating}</span>
-                </div>
-                <span className="text-sm text-purple-300 font-medium">
-                  {featuredAnime.releaseDate ? featuredAnime.releaseDate.split('-')[0] : '2026'}
-                </span>
-              </div>
-
-              <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black text-white tracking-tight leading-tight sm:leading-none drop-shadow-lg">
-                {featuredAnime.title}
-              </h1>
-
-              <p className="text-gray-300 text-xs sm:text-sm md:text-base line-clamp-3 leading-relaxed drop-shadow">
-                {featuredAnime.synopsis}
-              </p>
-
-              <div className="flex flex-wrap gap-1.5 sm:gap-2 pt-1">
-                {featuredAnime.genres?.map((g) => (
-                  <span
-                    key={g}
-                    className="text-[11px] sm:text-xs font-medium bg-purple-900/40 border border-purple-500/30 text-purple-200 px-2.5 py-0.5 rounded-lg backdrop-blur-sm"
-                  >
-                    {g}
-                  </span>
-                ))}
-              </div>
-
-              <div className="flex items-center gap-3 sm:gap-4 pt-3 sm:pt-4">
-                <button
-                  type="button"
-                  onClick={() => onSelectItem(featuredAnime.id, 'anime')}
-                  className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-bold px-6 sm:px-8 py-3 sm:py-3.5 rounded-2xl shadow-xl shadow-purple-600/40 transition-all transform hover:scale-105 cursor-pointer text-sm sm:text-base"
-                >
-                  <Play className="w-4 sm:w-5 h-4 sm:h-5 fill-white" /> Watch Now
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onSelectItem(featuredAnime.id, 'anime')}
-                  className="flex items-center gap-2 bg-[#1a1a2e]/80 hover:bg-[#22223b] text-white font-semibold px-5 sm:px-6 py-3 sm:py-3.5 rounded-2xl border border-purple-500/40 backdrop-blur-md transition-all cursor-pointer text-sm sm:text-base"
-                >
-                  <Info className="w-4 sm:w-5 h-4 sm:h-5" /> Details
-                </button>
-              </div>
-            </div>
-          </div>
-        </section>
+    <div className="space-y-8 sm:space-y-12 pb-20">
+      {/* Featured Anime Multi-Slide Hero Banner Section (YouTube Player Style 16:9) */}
+      {featuredAnimeList.length > 0 && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-3 sm:pt-4">
+          <FeaturedHeroSlider items={featuredAnimeList} onSelectItem={onSelectItem} />
+        </div>
       )}
 
       {/* Main Content Sections */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12 sm:space-y-16">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10 sm:space-y-14">
+        {/* AUTOMATIC LATEST ANIME UPDATES FEED */}
+        <LatestUpdatesSection
+          onSelectItem={onSelectItem}
+          onSelectEpisode={onSelectEpisode}
+          onViewAll={() => onViewAll('anime')}
+        />
+
+        {/* AUTOMATIC TOP ANIME RANKINGS BOARD */}
+        <TopRankingsSection
+          onSelectItem={onSelectItem}
+          onViewAll={() => onViewAll('anime')}
+        />
+
         {/* Trending Anime (First visible cards with high priority) */}
         <section className="space-y-4 sm:space-y-6">
           <div className="flex items-center justify-between">

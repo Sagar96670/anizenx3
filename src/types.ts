@@ -95,6 +95,17 @@ export interface ResolverResponse {
   source?: 'api' | 'manual';
 }
 
+export interface DownloadResponse {
+  status: boolean;
+  animeTitle?: string;
+  tmdbId?: string;
+  season?: number;
+  episode?: number;
+  available_qualities?: string[];
+  downloads?: Record<string, string>;
+  error?: string;
+}
+
 export type BlockType = 'episode' | 'season' | 'anime';
 
 export interface BlockedRecord {
@@ -113,4 +124,35 @@ export interface BlockedStore {
   seasons: Record<string, BlockedRecord>;
   anime: Record<string, BlockedRecord>;
 }
+
+export type UpdateType = 'NEW_ANIME' | 'NEW_SEASON' | 'NEW_EPISODE' | 'UPDATED';
+export type UpdateBadge = 'NEW' | 'NEW SEASON' | 'NEW EPISODE' | 'UPDATED';
+
+export interface UpdateRecord {
+  id: string;
+  animeId: string;
+  animeTitle: string;
+  season: number;
+  episode: number;
+  updateType: UpdateType;
+  badge: UpdateBadge;
+  poster: string;
+  description?: string;
+  timestamp: string;
+}
+
+export interface AnimeRankingItem {
+  rank: number;
+  animeId: string;
+  title: string;
+  poster: string;
+  backdrop?: string;
+  genres: string[];
+  rating?: string;
+  totalViews: number;
+  recentViews: number;
+  releaseDate?: string;
+  lastViewedAt?: string;
+}
+
 

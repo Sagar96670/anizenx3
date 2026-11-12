@@ -9,6 +9,7 @@ import { MovieDetailView } from './components/MovieDetailView';
 import { PlayerView } from './components/PlayerView';
 import { BloggerThemeModal } from './components/BloggerThemeModal';
 import { AdminPanel } from './components/AdminPanel';
+import { TopRankingsSection } from './components/TopRankingsSection';
 
 const GENRES = [
   'Animation',
@@ -82,9 +83,11 @@ export default function App() {
           setCurrentTab('anime-detail');
         } else if (tabParam) {
           setCurrentTab(tabParam);
+        } else {
+          setCurrentTab('home');
         }
       } catch {
-        // Safe fallback
+        setCurrentTab('home');
       }
     };
 
@@ -193,6 +196,7 @@ export default function App() {
         {currentTab === 'home' && (
           <HomeView
             onSelectItem={handleSelectItem}
+            onSelectEpisode={handleSelectEpisode}
             onViewAll={(category) => {
               if (category === 'movies') {
                 setCurrentTab('movie-list');
@@ -225,8 +229,13 @@ export default function App() {
           <AnimeDetailView
             animeId={selectedAnimeId}
             onBack={() => {
-              setCurrentTab('home');
-              updateUrl({ tab: 'home', anime: null, movie: null, 'watch-movie': null, 'watch-anime': null });
+              if (window.history.length > 1) {
+                window.history.back();
+              } else {
+                setCurrentTab('home');
+                updateUrl({ tab: 'home', anime: null, movie: null, 'watch-movie': null, 'watch-anime': null });
+              }
+              window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
             onSelectEpisode={handleSelectEpisode}
             onSelectItem={handleSelectItem}
@@ -237,8 +246,13 @@ export default function App() {
           <MovieDetailView
             movieId={selectedMovieId}
             onBack={() => {
-              setCurrentTab('movie-list');
-              updateUrl({ tab: 'movie-list', anime: null, movie: null, 'watch-movie': null, 'watch-anime': null });
+              if (window.history.length > 1) {
+                window.history.back();
+              } else {
+                setCurrentTab('movie-list');
+                updateUrl({ tab: 'movie-list', anime: null, movie: null, 'watch-movie': null, 'watch-anime': null });
+              }
+              window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
             onWatchMovie={handleWatchMovie}
             onSelectItem={handleSelectItem}
@@ -270,6 +284,12 @@ export default function App() {
           />
         )}
 
+        {currentTab === 'rankings' && (
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
+            <TopRankingsSection onSelectItem={handleSelectItem} />
+          </div>
+        )}
+
         {currentTab === 'admin' && (
           <AdminPanel
             onBack={() => {
@@ -293,7 +313,14 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <Footer onOpenBloggerModal={() => setBloggerModalOpen(true)} />
+      <Footer
+        onOpenBloggerModal={() => setBloggerModalOpen(true)}
+        onNavigateTab={(tab) => {
+          setCurrentTab(tab);
+          updateUrl({ tab, anime: null, movie: null, 'watch-movie': null, 'watch-anime': null });
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+      />
 
       {/* Blogger XML Theme Modal */}
       <BloggerThemeModal

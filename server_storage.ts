@@ -1,7 +1,17 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { ManualEpisode, ManualSeason, BlockedRecord, BlockedStore, BlockType } from './src/types';
+import {
+  ManualEpisode,
+  ManualSeason,
+  BlockedRecord,
+  BlockedStore,
+  BlockType,
+  UpdateRecord,
+  AnimeRankingItem,
+  UpdateType,
+  UpdateBadge,
+} from './src/types';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.resolve(__dirname, 'data');
@@ -9,11 +19,15 @@ const DATA_DIR = path.resolve(__dirname, 'data');
 const EPISODES_FILE = path.join(DATA_DIR, 'manual_episodes.json');
 const SEASONS_FILE = path.join(DATA_DIR, 'manual_seasons.json');
 const BLOCKED_FILE = path.join(DATA_DIR, 'blocked_records.json');
+const UPDATES_FILE = path.join(DATA_DIR, 'latest_updates.json');
+const SNAPSHOT_FILE = path.join(DATA_DIR, 'catalog_snapshot.json');
+const RANKINGS_FILE = path.join(DATA_DIR, 'anime_rankings.json');
 
 // Ensure backend data directory exists
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
+
 
 function readJsonFile<T>(filePath: string, defaultValue: T): T {
   try {
@@ -417,6 +431,20 @@ export function saveManualEpisode(
   episodesCache[key] = episodeRecord;
   writeJsonFile(EPISODES_FILE, episodesCache);
 
+  // Trigger automatic update notification ONLY for genuinely new episode additions (not edits)
+  if (!existing) {
+    addUpdateRecord({
+      animeId,
+      animeTitle: episodeRecord.animeTitle,
+      season,
+      episode: episodeNumber,
+      updateType: 'NEW_EPISODE',
+      badge: 'NEW EPISODE',
+      poster: episodeRecord.thumbnail || '',
+      description: `Episode ${episodeNumber} (${episodeRecord.title}) released for Season ${season}.`,
+    });
+  }
+
   // Automatically ensure season exists in manual seasons and update count
   const manualEpsInSeason = Object.values(episodesCache).filter(
     (ep) => String(ep.animeId).trim() === animeId && Number(ep.season) === season
@@ -536,6 +564,7 @@ export function saveManualSeason(payload: ManualSeason): { success: boolean; sea
   }
 
   const key = `${animeId}_s${season}`;
+  const isNewSeason = !seasonsCache[key];
   const seasonRecord: ManualSeason = {
     animeId,
     season,
@@ -546,6 +575,20 @@ export function saveManualSeason(payload: ManualSeason): { success: boolean; sea
 
   seasonsCache[key] = seasonRecord;
   writeJsonFile(SEASONS_FILE, seasonsCache);
+
+  if (isNewSeason) {
+    addUpdateRecord({
+      animeId,
+      animeTitle: payload.title || `Anime ${animeId}`,
+      season,
+      episode: 1,
+      updateType: 'NEW_SEASON',
+      badge: 'NEW SEASON',
+      poster: '',
+      description: `Season ${season} added to catalog.`,
+    });
+  }
+
   return { success: true, season: seasonRecord, message: 'Season saved successfully.' };
 }
 
@@ -660,3 +703,288 @@ export function importAllData(data: any): { success: boolean; importedEpisodes: 
     message: `Imported ${importedEpisodes} episodes and ${importedSeasons} seasons successfully.`,
   };
 }
+
+// ==========================================
+// FEATURE 1: LATEST ANIME UPDATES ENGINE
+// ==========================================
+interface CatalogSnapshotItem {
+  animeId: string;
+  title: string;
+  poster: string;
+  lastSeen: string;
+}
+
+let updatesCache: UpdateRecord[] = readJsonFile<UpdateRecord[]>(UPDATES_FILE, []);
+let snapshotCache: Record<string, CatalogSnapshotItem> = readJsonFile<Record<string, CatalogSnapshotItem>>(SNAPSHOT_FILE, {});
+
+/**
+ * Get all latest update records, deduplicated per anime and sorted newest first.
+ * Each anime appears AT MOST ONCE (at its most recent update position).
+ */
+export function getLatestUpdates(limit = 40): UpdateRecord[] {
+  reloadFromDisk();
+
+  // Reload updates file from disk to ensure sync
+  const diskUpdates = readJsonFile<UpdateRecord[]>(UPDATES_FILE, []);
+  updatesCache = diskUpdates;
+
+  // Sort all records descending by timestamp
+  const sorted = [...updatesCache].sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  );
+
+  // Per-anime deduplication: keep only the latest update entry per animeId
+  const seenAnime = new Set<string>();
+  const deduplicated: UpdateRecord[] = [];
+
+  for (const record of sorted) {
+    const cleanId = String(record.animeId).trim();
+    if (!seenAnime.has(cleanId)) {
+      seenAnime.add(cleanId);
+      deduplicated.push(record);
+    }
+  }
+
+  return limit > 0 ? deduplicated.slice(0, limit) : deduplicated;
+}
+
+/**
+ * Record a new update event:
+ * Replaces any previous update entry for the same animeId and moves it to position #1!
+ */
+export function addUpdateRecord(update: Omit<UpdateRecord, 'id' | 'timestamp'>): UpdateRecord {
+  reloadFromDisk();
+  const cleanId = String(update.animeId).trim();
+  const now = new Date().toISOString();
+
+  // Remove any previous update entry for the same anime so position is replaced cleanly
+  updatesCache = updatesCache.filter((u) => String(u.animeId).trim() !== cleanId);
+
+  const record: UpdateRecord = {
+    id: `upd_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    animeId: cleanId,
+    animeTitle: update.animeTitle,
+    season: update.season || 1,
+    episode: update.episode || 1,
+    updateType: update.updateType,
+    badge: update.badge,
+    poster: update.poster || '',
+    description: update.description || '',
+    timestamp: now,
+  };
+
+  updatesCache.unshift(record);
+  if (updatesCache.length > 150) {
+    updatesCache = updatesCache.slice(0, 150);
+  }
+  writeJsonFile(UPDATES_FILE, updatesCache);
+  return record;
+}
+
+/**
+ * Automatically compare live catalog items with stored snapshot
+ * to detect newly added anime series without generating fake updates.
+ */
+export function syncCatalogUpdates(liveCatalog: any[]): UpdateRecord[] {
+  reloadFromDisk();
+
+  if (!Array.isArray(liveCatalog) || liveCatalog.length === 0) {
+    return getLatestUpdates();
+  }
+
+  const isInitialRun = Object.keys(snapshotCache).length === 0;
+  const now = new Date().toISOString();
+
+  liveCatalog.forEach((item) => {
+    const cleanId = String(item.id || item.tmdbId).trim();
+    if (!cleanId) return;
+
+    if (!snapshotCache[cleanId]) {
+      snapshotCache[cleanId] = {
+        animeId: cleanId,
+        title: item.title || `Anime ${cleanId}`,
+        poster: item.poster || '',
+        lastSeen: now,
+      };
+
+      // Generate update record ONLY if this anime is added AFTER initial baseline setup!
+      if (!isInitialRun) {
+        addUpdateRecord({
+          animeId: cleanId,
+          animeTitle: item.title || `Anime ${cleanId}`,
+          season: 1,
+          episode: 1,
+          updateType: 'NEW_ANIME',
+          badge: 'NEW',
+          poster: item.poster || '',
+          description: item.synopsis || `New anime series added to catalog: ${item.title}`,
+        });
+      }
+    } else {
+      snapshotCache[cleanId].lastSeen = now;
+      if (item.title) snapshotCache[cleanId].title = item.title;
+      if (item.poster) snapshotCache[cleanId].poster = item.poster;
+    }
+  });
+
+  writeJsonFile(SNAPSHOT_FILE, snapshotCache);
+  return getLatestUpdates();
+}
+
+// ==========================================
+// FEATURE 2: AUTOMATIC ANIME RANKING SYSTEM & TRENDING
+// ==========================================
+interface StoredAnimeRanking {
+  animeId: string;
+  title: string;
+  poster: string;
+  backdrop?: string;
+  genres: string[];
+  rating?: string;
+  releaseDate?: string;
+  totalViews: number;
+  viewLogs: number[];
+  lastViewedAt: string;
+}
+
+let rankingsCache: Record<string, StoredAnimeRanking> = readJsonFile<Record<string, StoredAnimeRanking>>(RANKINGS_FILE, {});
+
+// In-memory anti-spam debounce cache: "client_anime_ep" => timestamp
+const viewCooldownMap = new Map<string, number>();
+const COOLDOWN_MS = 3 * 60 * 1000; // 3 minutes debounce per client per episode
+
+/**
+ * Record actual episode view with anti-fraud debounce protection
+ */
+export function recordEpisodeView(payload: {
+  animeId: string;
+  season?: number;
+  episode?: number;
+  animeTitle?: string;
+  poster?: string;
+  backdrop?: string;
+  genres?: string[];
+  clientIp?: string;
+}): { success: boolean; counted: boolean; totalViews: number; rank: number; message: string } {
+  reloadFromDisk();
+
+  const cleanId = String(payload.animeId).trim();
+  const seasonNum = payload.season || 1;
+  const epNum = payload.episode || 1;
+  const clientKey = `${payload.clientIp || 'client'}_${cleanId}_s${seasonNum}_e${epNum}`;
+  const nowMs = Date.now();
+  const lastViewTime = viewCooldownMap.get(clientKey) || 0;
+
+  let existing = rankingsCache[cleanId];
+  if (!existing) {
+    existing = {
+      animeId: cleanId,
+      title: payload.animeTitle || `Anime ${cleanId}`,
+      poster: payload.poster || '',
+      backdrop: payload.backdrop || '',
+      genres: payload.genres || ['Anime'],
+      rating: '8.5',
+      releaseDate: '2026',
+      totalViews: 0,
+      viewLogs: [],
+      lastViewedAt: new Date().toISOString(),
+    };
+    rankingsCache[cleanId] = existing;
+  }
+
+  // Anti-Spam Check: Ignore refreshes or rapid repeated clicks within 3 minutes
+  if (nowMs - lastViewTime < COOLDOWN_MS) {
+    const currentRank = getAnimeRank(cleanId);
+    return {
+      success: true,
+      counted: false,
+      totalViews: existing.totalViews,
+      rank: currentRank,
+      message: 'View cooldown active. Prevented duplicate view count inflation.',
+    };
+  }
+
+  // Record valid view
+  viewCooldownMap.set(clientKey, nowMs);
+  existing.totalViews += 1;
+  existing.viewLogs.push(nowMs);
+
+  // Clean view logs older than 7 days
+  const sevenDaysAgo = nowMs - 7 * 24 * 60 * 60 * 1000;
+  existing.viewLogs = existing.viewLogs.filter((t) => t > sevenDaysAgo);
+  existing.lastViewedAt = new Date().toISOString();
+
+  if (payload.animeTitle && payload.animeTitle !== `Anime ${cleanId}`) existing.title = payload.animeTitle;
+  if (payload.poster) existing.poster = payload.poster;
+  if (payload.genres && payload.genres.length > 0) existing.genres = payload.genres;
+
+  writeJsonFile(RANKINGS_FILE, rankingsCache);
+
+  const rank = getAnimeRank(cleanId);
+  return {
+    success: true,
+    counted: true,
+    totalViews: existing.totalViews,
+    rank,
+    message: 'Episode view recorded successfully.',
+  };
+}
+
+/**
+ * Calculate rank position of a specific anime based on total views
+ */
+function getAnimeRank(animeId: string): number {
+  const cleanId = String(animeId).trim();
+  const sorted = Object.values(rankingsCache).sort((a, b) => b.totalViews - a.totalViews);
+  const idx = sorted.findIndex((a) => String(a.animeId).trim() === cleanId);
+  return idx !== -1 ? idx + 1 : sorted.length + 1;
+}
+
+/**
+ * Get formatted anime rankings sorted by total views or recent trending activity
+ */
+export function getAnimeRankings(limit?: number | string, type: 'total' | 'trending' = 'total'): AnimeRankingItem[] {
+  reloadFromDisk();
+
+  const nowMs = Date.now();
+  const sevenDaysAgo = nowMs - 7 * 24 * 60 * 60 * 1000;
+
+  const items = Object.values(rankingsCache).map((item) => {
+    const recentViews = (item.viewLogs || []).filter((t) => t > sevenDaysAgo).length;
+    return {
+      animeId: item.animeId,
+      title: item.title,
+      poster: item.poster,
+      backdrop: item.backdrop,
+      genres: item.genres || ['Anime'],
+      rating: item.rating || '8.5',
+      releaseDate: item.releaseDate || '2026',
+      totalViews: item.totalViews || 0,
+      recentViews,
+      lastViewedAt: item.lastViewedAt,
+    };
+  });
+
+  // Sort based on requested type
+  if (type === 'trending') {
+    items.sort((a, b) => {
+      if (b.recentViews !== a.recentViews) return b.recentViews - a.recentViews;
+      return b.totalViews - a.totalViews;
+    });
+  } else {
+    items.sort((a, b) => b.totalViews - a.totalViews);
+  }
+
+  // Attach dynamic 1-indexed rank number
+  const rankedList: AnimeRankingItem[] = items.map((item, index) => ({
+    rank: index + 1,
+    ...item,
+  }));
+
+  if (limit === 'all' || !limit) {
+    return rankedList;
+  }
+  const parsedLimit = parseInt(String(limit), 10);
+  return isNaN(parsedLimit) || parsedLimit <= 0 ? rankedList : rankedList.slice(0, parsedLimit);
+}
+

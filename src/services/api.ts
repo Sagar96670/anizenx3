@@ -4,11 +4,14 @@ import {
   SeasonInfo,
   EpisodeItem,
   ResolverResponse,
+  DownloadResponse,
   ManualEpisode,
   ManualSeason,
   BlockedRecord,
   BlockedStore,
   BlockType,
+  UpdateRecord,
+  AnimeRankingItem,
 } from '../types';
 
 export const LIVE_API_BASE = 'https://anime-api-new.antideploy.app';
@@ -111,7 +114,12 @@ async function apiFetch(endpoint: string, options?: RequestInit): Promise<Respon
     cleanEndpoint.startsWith('/api/manual') ||
     cleanEndpoint.startsWith('/api/admin') ||
     cleanEndpoint.startsWith('/api/resolve') ||
-    cleanEndpoint.startsWith('/api/blocks');
+    cleanEndpoint.startsWith('/api/blocks') ||
+    cleanEndpoint.startsWith('/api/updates') ||
+    cleanEndpoint.startsWith('/api/views') ||
+    cleanEndpoint.startsWith('/api/rankings') ||
+    cleanEndpoint.startsWith('/api/trending');
+
 
   if (isLocalBackendRoute) {
     try {
@@ -580,6 +588,51 @@ export async function resolveBlakiteVideo(
   } catch (e: any) {
     console.error('Resolve Blakite video error:', e);
     return { status: false, error: e?.message || 'Failed to resolve video stream' };
+  }
+}
+
+/**
+ * Fetch quality-wise download links from Blakite Download API
+ * Endpoint: /api/download/blakite/{tmdbId}/{season}/{episode}
+ */
+export async function fetchBlakiteDownloadUrls(
+  tmdbId: string,
+  season: number | string = 1,
+  episode: number | string = 1
+): Promise<DownloadResponse> {
+  const cleanTmdb = String(tmdbId || '').trim();
+  const cleanSeason = String(season || 1).trim();
+  const cleanEp = String(episode || 1).trim();
+
+  if (!cleanTmdb) {
+    return { status: false, error: 'TMDB ID is required for download resolution.' };
+  }
+
+  try {
+    const url = `/api/download/blakite/${encodeURIComponent(cleanTmdb)}/${encodeURIComponent(cleanSeason)}/${encodeURIComponent(cleanEp)}`;
+    const res = await apiFetch(url);
+    const text = await res.text();
+    let data: DownloadResponse;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      return {
+        status: false,
+        error: `Download API returned non-JSON response (HTTP ${res.status}).`,
+      };
+    }
+
+    if (data && data.status && data.downloads) {
+      return data;
+    }
+
+    return {
+      status: false,
+      error: data?.error || 'No quality-wise download links available for this episode.',
+    };
+  } catch (e: any) {
+    console.error('Fetch Blakite download URLs error:', e);
+    return { status: false, error: e?.message || 'Failed to fetch download links.' };
   }
 }
 
@@ -1272,4 +1325,90 @@ export async function importBackupData(data: any) {
   });
   return await res.json();
 }
+
+// ==========================================
+// LATEST UPDATES & ANIME RANKING APIS
+// ==========================================
+export async function fetchLatestUpdates(limit = 40): Promise<UpdateRecord[]> {
+  try {
+    const res = await apiFetch(`/api/updates/latest?limit=${limit}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.updates || [];
+  } catch (err) {
+    console.error('fetchLatestUpdates error:', err);
+    return [];
+  }
+}
+
+export async function syncCatalogUpdatesAPI(catalog?: AnimeItem[]): Promise<UpdateRecord[]> {
+  try {
+    const list = catalog || memoryAnimeCatalog || [];
+    const res = await apiFetch('/api/updates/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ catalog: list }),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.updates || [];
+  } catch (err) {
+    console.error('syncCatalogUpdatesAPI error:', err);
+    return [];
+  }
+}
+
+export async function trackEpisodeViewAPI(payload: {
+  animeId: string;
+  season?: number;
+  episode?: number;
+  animeTitle?: string;
+  poster?: string;
+  backdrop?: string;
+  genres?: string[];
+}): Promise<{ success: boolean; counted?: boolean; totalViews?: number; rank?: number }> {
+  try {
+    const res = await apiFetch('/api/views/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) return { success: false };
+    const data = await res.json();
+    return data;
+  } catch (err) {
+    console.error('trackEpisodeViewAPI error:', err);
+    return { success: false };
+  }
+}
+
+export async function fetchAnimeRankingsAPI(
+  limit?: number | 'all',
+  type: 'total' | 'trending' = 'total'
+): Promise<AnimeRankingItem[]> {
+  try {
+    let url = `/api/rankings?type=${type}`;
+    if (limit) url += `&limit=${limit}`;
+    const res = await apiFetch(url);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.rankings || [];
+  } catch (err) {
+    console.error('fetchAnimeRankingsAPI error:', err);
+    return [];
+  }
+}
+
+export async function fetchTrendingAnimeAPI(limit = 15): Promise<AnimeRankingItem[]> {
+  try {
+    const res = await apiFetch(`/api/trending?limit=${limit}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.trending || [];
+  } catch (err) {
+    console.error('fetchTrendingAnimeAPI error:', err);
+    return [];
+  }
+}
+
 
